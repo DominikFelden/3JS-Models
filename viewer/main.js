@@ -1,22 +1,38 @@
 import {
   Scene, PerspectiveCamera, WebGLRenderer, Color, Box3, Vector3,
-  AmbientLight, DirectionalLight, GridHelper,
+  HemisphereLight, DirectionalLight, Fog, CircleGeometry, MeshStandardMaterial, Mesh,
+  PCFSoftShadowMap, ACESFilmicToneMapping, SRGBColorSpace,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { models } from '../src/registry.js';
 
 const scene = new Scene();
-scene.background = new Color(0xdddddd);
+scene.background = new Color(0xbfd9ee);
+scene.fog = new Fog(0xbfd9ee, 80, 300);
 const camera = new PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 1000);
 const renderer = new WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = PCFSoftShadowMap;
+renderer.toneMapping = ACESFilmicToneMapping;
+renderer.outputColorSpace = SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
-scene.add(new AmbientLight(0xffffff, 0.6));
-const sun = new DirectionalLight(0xffffff, 1.5);
-sun.position.set(5, 10, 7);
-scene.add(sun, new GridHelper(10, 10));
+// Sky/ground hemisphere light, a warm low sun with soft shadows, and a grass disc to receive them.
+scene.add(new HemisphereLight(0xcfe6ff, 0x5a6b3a, 0.9));
+const sun = new DirectionalLight(0xfff0d6, 2.4);
+sun.position.set(14, 22, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 70 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.04;
+scene.add(sun);
+const ground = new Mesh(new CircleGeometry(250, 64), new MeshStandardMaterial({ color: 0x6a8f48, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -45,7 +61,7 @@ function show(reframe) {
   const size = box.getSize(new Vector3()).length();
   const center = box.getCenter(new Vector3());
   controls.target.copy(center);
-  camera.position.copy(center).add(new Vector3(1, 0.6, 1).normalize().multiplyScalar(size * 1.5));
+  camera.position.copy(center).add(new Vector3(1, 0.6, 1).normalize().multiplyScalar(size * 1.4));
   controls.update();
 }
 

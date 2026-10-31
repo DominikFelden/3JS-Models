@@ -1,5 +1,6 @@
 import {
-  Group, Mesh, Vector3, Quaternion, Euler, Matrix4, BoxGeometry, MeshStandardMaterial,
+  Group, Mesh, Vector3, Quaternion, Euler, Matrix4, BoxGeometry, CylinderGeometry, MeshStandardMaterial,
+  CanvasTexture, RepeatWrapping, SRGBColorSpace, Float32BufferAttribute,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -32,17 +33,75 @@ export function shared(key, factory) {
   return cache.get(key);
 }
 
-/** Flat-shaded material cache keyed by colour (no textures needed). */
-export function material(color, flatShading = false) {
-  return shared(`mat:${color}:${flatShading}`, () => new MeshStandardMaterial({ color, flatShading, roughness: 1 }));
+/**
+ * Flat-shaded material cache keyed by colour. With `vertexColors` the
+ * MergeBuilder bakes per-part colour variation and ground grime into the mesh
+ * (pass `tint` / `grime` to `MergeBuilder.add`).
+ */
+export function material(color, flatShading = false, vertexColors = false) {
+  return shared(`mat:${color}:${flatShading}:${vertexColors}`, () => new MeshStandardMaterial({ color, flatShading, roughness: 1, vertexColors }));
+}
+
+/** Size in world units of one stone texture tile (4 courses of blocks). */
+export const STONE_TILE = 2.5;
+
+/**
+ * Procedural block-masonry texture, drawn once on a canvas. Only available in a
+ * browser (returns null elsewhere, e.g. under Node tests); models then fall
+ * back to plain colour.
+ */
+function stoneTexture() {
+  return shared('tex:stone', () => {
+    if (typeof document === 'undefined') return null;
+    const S = 256, rows = 4, rh = S / rows;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const ctx = cv.getContext('2d');
+    const rnd = mulberry32(1234);
+    ctx.fillStyle = '#5c5a56';
+    ctx.fillRect(0, 0, S, S);
+    for (let r = 0; r < rows; r++) {
+      const n = 3 + Math.floor(rnd() * 2);
+      const cuts = [];
+      let x = rnd() * S;
+      for (let i = 0; i < n; i++) { cuts.push(x); x += (S / n) * (0.7 + rnd() * 0.6); }
+      cuts.sort((a, b) => a - b);
+      cuts.forEach((c0, i) => {
+        const c1 = i + 1 < n ? cuts[i + 1] : cuts[0] + S;
+        const v = 150 + Math.floor(rnd() * 70);
+        ctx.fillStyle = `rgb(${v},${v - 2},${v - 6})`;
+        for (const o of [0, -S]) ctx.fillRect(c0 + o + 2, r * rh + 2, c1 - c0 - 4, rh - 4);
+      });
+    }
+    // Speckle noise for weathering.
+    for (let i = 0; i < 2500; i++) {
+      const v = Math.floor(rnd() * 255);
+      ctx.fillStyle = `rgba(${v},${v},${v},0.08)`;
+      ctx.fillRect(rnd() * S, rnd() * S, 2, 2);
+    }
+    const t = new CanvasTexture(cv);
+    t.wrapS = t.wrapT = RepeatWrapping;
+    t.colorSpace = SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  });
+}
+
+/** Weathered stone: vertex-coloured, with a masonry texture where canvases exist. */
+export function stoneMaterial(color) {
+  return shared(`mat:stone:${color}`, () => new MeshStandardMaterial({
+    color, flatShading: true, roughness: 0.95, vertexColors: true, map: stoneTexture(),
+  }));
 }
 
 /** Window glass: slightly emissive so windows stay visible in shadow. */
-export function glassMaterial() {
-  return shared('mat:glass', () => new MeshStandardMaterial({
-    color: 0x2a3f55, emissive: 0x1a2a3a, roughness: 0.3, metalness: 0.2,
-  }));
+export function glassMaterial(lit = false) {
+  return shared(lit ? 'mat:glass:lit' : 'mat:glass', () => new MeshStandardMaterial(lit
+    ? { color: 0x6b5a3a, emissive: 0xb07a2a, emissiveIntensity: 0.7, roughness: 0.4 }
+    : { color: 0x2a3f55, emissive: 0x1a2a3a, roughness: 0.15, metalness: 0.3 }));
 }
+
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /**
  * Collects many transformed copies of (shared) geometries and merges them into
@@ -60,14 +119,49 @@ export class MergeBuilder {
    * Add a transformed copy of `geometry`.
    * opts: position [x,y,z], scale [x,y,z], yaw (radians around Y) or
    * quaternion (THREE.Quaternion). If both are given, quaternion wins.
+   * Extras for textured / vertex-coloured materials:
+   *  - tint:  brightness number or [r,g,b] multiplier baked into vertex colours
+   *  - grime: darken (and slightly green) the lowest ~2.5 units, like dirt and moss
+   *  - uv:    'box' | 'cyl' rescales UVs so textures keep a constant world size
    */
-  add(geometry, mat, { position = [0, 0, 0], scale = [1, 1, 1], yaw = 0, quaternion = null } = {}) {
+  add(geometry, mat, { position = [0, 0, 0], scale = [1, 1, 1], yaw = 0, quaternion = null, tint = 1, grime = false, uv = null } = {}) {
     const q = quaternion ?? _q.setFromAxisAngle(_yAxis, yaw);
     this._m.compose(_p.set(...position), q, _s.set(...scale));
     const g = geometry.clone();
+    if (uv && g.attributes.uv && mat.map) this._scaleUV(g, uv, scale);
     g.applyMatrix4(this._m);
+    if (mat.vertexColors) this._colour(g, tint, grime);
     if (!this._parts.has(mat)) this._parts.set(mat, []);
     this._parts.get(mat).push(g);
+  }
+
+  _scaleUV(g, kind, [sx, sy, sz]) {
+    const uv = g.attributes.uv, T = STONE_TILE;
+    if (kind === 'box') {
+      // BoxGeometry: 4 vertices per face in the order +x, -x, +y, -y, +z, -z.
+      const dims = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
+      for (let i = 0; i < uv.count; i++) {
+        const [du, dv] = dims[Math.min(5, i >> 2)];
+        uv.setXY(i, uv.getX(i) * du / T, uv.getY(i) * dv / T);
+      }
+    } else {
+      const circ = 2 * Math.PI * sx;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * circ / T, uv.getY(i) * sy / T);
+    }
+  }
+
+  _colour(g, tint, grime) {
+    const t = typeof tint === 'number' ? [tint, tint, tint] : tint;
+    const pos = g.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const k = grime ? 0.7 + 0.3 * smooth(0, 2.5, pos.getY(i)) : 1;
+      const low = 1 - k;
+      col[i * 3] = t[0] * k;
+      col[i * 3 + 1] = t[1] * (k + low * 0.3);
+      col[i * 3 + 2] = t[2] * k * (1 - low * 0.3);
+    }
+    g.setAttribute('color', new Float32BufferAttribute(col, 3));
   }
 
   /** Merge each material group and add the resulting meshes to `model`. */
@@ -80,7 +174,9 @@ export class MergeBuilder {
       geoms.forEach((g) => g.dispose());
       if (!merged) continue;
       model._ownedGeometries.push(merged);
-      model.add(new Mesh(merged, mat));
+      const mesh = new Mesh(merged, mat);
+      mesh.castShadow = mesh.receiveShadow = true;
+      model.add(mesh);
     }
     this._parts.clear();
   }
@@ -115,6 +211,7 @@ export class WorldModel extends Group {
     this.random = mulberry32(this.seed); // per-instance PRNG, call as this.random()
     this._shapes = [];            // collision shapes in model-local space
     this._windows = [];           // window descriptions in model-local space
+    this._doors = [];             // door descriptions in model-local space
     this._ownedGeometries = [];   // non-shared geometries, freed by dispose()
     const { position, rotation, size = 1 } = options;
     if (position) Array.isArray(position) ? this.position.set(...position) : this.position.copy(position);
@@ -139,6 +236,7 @@ export class WorldModel extends Group {
     const m = new Mesh(geometry, mat);
     m.position.set(...position);
     m.scale.set(...scale);
+    m.castShadow = m.receiveShadow = true;
     this.add(m);
     return m;
   }
@@ -190,19 +288,89 @@ export class WorldModel extends Group {
   }
 
   /**
-   * Register a window (visual + exposed data). Adds a thin glass box to the
-   * given MergeBuilder. `yaw` is the direction the window faces: the outward
-   * normal is (sin yaw, 0, cos yaw), so yaw 0 faces +Z.
-   * `position` is the centre of the window on the wall surface.
+   * Place a box in the local frame of a wall face. `u` runs along the wall,
+   * `n` is the offset along the outward normal (box centre), `y` is world
+   * height. `yaw` is the face direction (see addWindow).
    */
-  addWindow(builder, position, yaw, width = 0.6, height = 0.8) {
-    const depth = 0.1;
-    const geo = shared('window:box', () => new BoxGeometry(1, 1, 1));
-    // Push the box half its depth outwards so it sits on, not in, the wall.
-    const nx = Math.sin(yaw), nz = Math.cos(yaw);
-    const pos = [position[0] + nx * depth / 2, position[1], position[2] + nz * depth / 2];
-    builder.add(geo, glassMaterial(), { position: pos, scale: [width, height, depth], yaw });
+  _facePart(builder, geo, mat, origin, yaw, [u, y, n], scale) {
+    const px = origin[0] + Math.cos(yaw) * u + Math.sin(yaw) * n;
+    const pz = origin[2] - Math.sin(yaw) * u + Math.cos(yaw) * n;
+    builder.add(geo, mat, { position: [px, y, pz], scale, yaw });
+  }
+
+  /**
+   * Register a window (visual + exposed data): recessed glass in a wooden
+   * frame with mullions and a sill. `yaw` is the direction the window faces:
+   * the outward normal is (sin yaw, 0, cos yaw), so yaw 0 faces +Z.
+   * `position` is the centre of the window on the wall surface.
+   * opts: arched (round top, for castles), shutters (colour), sill (colour).
+   * About a quarter of the windows are lit warmly (random per window).
+   */
+  addWindow(builder, position, yaw, width = 0.6, height = 0.8, opts = {}) {
+    const { arched = false, shutters = null } = opts;
+    const box = shared('window:box', () => new BoxGeometry(1, 1, 1));
+    const disc = shared('window:disc', () => {
+      const g = new CylinderGeometry(1, 1, 1, 10);
+      g.rotateX(Math.PI / 2); // axis along Z
+      return g;
+    });
+    const wood = material(0x4a3322, true);
+    const sill = material(opts.sill ?? 0xa9a49a, true);
+    const glass = glassMaterial(this.random() < 0.25);
+    const r = width / 2, fw = 0.08;
+    // Rectangular part; the arch (if any) replaces the top `r` of the height.
+    const rh = arched ? height - r : height;
+    const yc = position[1] - (arched ? r / 2 : 0);
+    const F = (g, m, u, y, n, sx, sy, sz) => this._facePart(builder, g, m, position, yaw, [u, y, n], [sx, sy, sz]);
+
+    F(box, wood, 0, yc, 0.06, width + fw * 2, rh + fw * 2, 0.12);          // frame, front at 0.12
+    F(box, glass, 0, yc, 0.06, width, rh, 0.1);                            // glass, front at 0.11
+    if (arched) {
+      const ya = position[1] + height / 2 - r;
+      F(disc, wood, 0, ya, 0.06, r + fw, r + fw, 0.12);
+      F(disc, glass, 0, ya, 0.06, r, r, 0.1);
+    }
+    F(box, wood, 0, position[1], 0.065, 0.035, height, 0.13);             // vertical mullion
+    F(box, wood, 0, position[1] - height * 0.1, 0.065, width, 0.035, 0.13); // transom
+    F(box, sill, 0, position[1] - height / 2 - 0.05, 0.1, width + 0.3, 0.07, 0.2);
+    if (shutters) {
+      const sm = material(shutters, true), sw = width * 0.5;
+      for (const side of [-1, 1]) F(box, sm, side * (width / 2 + fw + sw / 2), yc, 0.05, sw, rh + fw * 2, 0.08);
+    }
     this._windows.push({ position: [...position], yaw, width, height });
+  }
+
+  /**
+   * Door (visual only) on a wall face, `position` = centre of the door foot on
+   * the wall surface. Planked leaf with iron straps and a handle, a framing
+   * surround, a stone step, and an optional round top.
+   */
+  addDoor(builder, position, yaw, width = 0.8, height = 1.5, opts = {}) {
+    const { arched = false, frame = 0x8a857b, wood = 0x5a3b22 } = opts;
+    const box = shared('window:box', () => new BoxGeometry(1, 1, 1));
+    const disc = shared('window:disc', () => {
+      const g = new CylinderGeometry(1, 1, 1, 10);
+      g.rotateX(Math.PI / 2);
+      return g;
+    });
+    const leaf = material(wood, true), dark = material(0x25211e, true), surround = material(frame, true);
+    const r = width / 2, fw = 0.12;
+    const rh = arched ? height - r : height;
+    const y0 = position[1];
+    const F = (g, m, u, y, n, sx, sy, sz) => this._facePart(builder, g, m, position, yaw, [u, y, n], [sx, sy, sz]);
+
+    F(box, surround, 0, y0 + rh / 2, 0.07, width + fw * 2, rh + fw, 0.14);
+    F(box, leaf, 0, y0 + rh / 2, 0.06, width, rh, 0.1);
+    if (arched) {
+      const ya = y0 + height - r;
+      F(disc, surround, 0, ya, 0.07, r + fw, r + fw, 0.14);
+      F(disc, leaf, 0, ya, 0.06, r, r, 0.1);
+    }
+    for (let i = -1; i <= 1; i += 2) F(box, dark, i * width * 0.17, y0 + rh / 2, 0.062, 0.02, rh, 0.105); // plank gaps
+    for (const f of [0.2, 0.75]) F(box, dark, 0, y0 + rh * f, 0.12, width, 0.07, 0.04); // iron straps
+    F(box, dark, width * 0.32, y0 + height * 0.45, 0.13, 0.07, 0.07, 0.06);           // handle
+    F(box, surround, 0, y0 + 0.04, 0.2, width + 0.5, 0.08, 0.4);                        // step
+    this._doors.push({ position: [...position], yaw, width, height });
   }
 
   /**

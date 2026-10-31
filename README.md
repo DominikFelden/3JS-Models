@@ -20,7 +20,7 @@ scene.add(new SimpleTree());
 | `Bush` | – | 3 squashed spheres | `sphere` |
 | `Rock` | `seed` | Randomly displaced icosahedron; the seed picks one of 64 shared shapes (`seed % 64`) | `convex` |
 | `House` | `type` (`'cottage'`, `'longhouse'`, `'towerhouse'`), `seed` | Box walls, pyramid or gable roof, door, windows on all walls | `body`, `roof` |
-| `Castle` | `complexity` 0-5 (default 1), `seed` | Keep, curtain walls, towers, gates, halls, windows (see below) | `keep`, `tower`, `roof`, `wall`, `hall` |
+| `Castle` | `complexity` 0-5 (default 1), `seed` | Keep, curtain walls, towers, gates, halls, windows (see below) | `keep`, `tower`, `roof`, `wall`, `hall`, `turret` |
 
 \* The branch colliders are only present when `complexity > 0`.
 
@@ -59,10 +59,10 @@ Branched trees grow somewhat taller and wider than the simple tree (up to ~7 uni
 | 4 | + more wall towers, 2 halls in the courtyard |
 | 5 | + 4 halls and the most wall towers (about 35 towers, 30 wall pieces, ~8k vertices, 4 draw calls) |
 
-Randomness affects tower and wall heights and radii, tower positions along the walls (corner towers stay at the corners), keep size, hall sizes and positions, window placement, and stone and roof colours. The gates (at `x = 0` on the `+Z` side of both rings) are never blocked; halls keep clear of the path to the keep.
+Castles are deliberately asymmetric: wall corners are pushed outwards by random amounts (the front wall and gates stay on the `+Z` axis), towers differ in radius, height and style (conical roof or battlements), wall segments differ in height, and the keep has an off-centre door, a stair turret (`turret` collider) and a banner. Walls, towers and the keep carry merlons. Hall sizes/positions, window placement and stone and roof colours are random too. The gates (at `x = 0` on the `+Z` side of both rings) are never blocked; halls keep clear of the path to the keep.
 
 ### Windows
-Houses and castles have windows (thin glass boxes with a slightly emissive material, no textures). They are part of the single merged mesh. Their data is exposed in world space:
+Houses and castles have windows: recessed glass in a wooden frame with a mullion, transom and sill (arched in castles, optional shutters on houses, about a quarter lit warmly). Doors have planks, iron straps, a surround and a step (visual only; `addDoor()`). They are part of the single merged mesh. Their data is exposed in world space:
 ```js
 castle.getWindows(); // [{ position:[x,y,z], normal:[x,y,z], width, height }, ...]
 ```
@@ -132,3 +132,11 @@ Open the printed URL and pick a model in the menu. For models that support it a 
 
 ## Tests
 `npm test`
+
+## Realism tricks
+
+- **Denser foliage:** oaks get a cluster of overlapping blobs on every branch tip and fork, pines stacked needle skirts; bushes are 8 blobs (sometimes with berries).
+- **Vertex colours:** every part gets its own random tint (leaves lighter at the top, stone per block), baked into the merged mesh, so there is no extra draw call. `MergeBuilder.add` accepts `tint`, `grime` (darker, mossy near the ground) and `uv`.
+- **Masonry texture:** castle stone uses a procedural canvas texture (browser only; plain colour under Node).
+- **Details:** merlons, plinths, string courses, chimneys, timber framing, stone foundations, root flares, roof ridge caps, flags.
+- **Viewer:** soft shadows, hemisphere sky light, fog, tone mapping and a grass ground. All models cast/receive shadows.
