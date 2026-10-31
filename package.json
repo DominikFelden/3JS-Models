@@ -6,8 +6,9 @@
   "main": "src/index.js",
   "exports": { ".": "./src/index.js" },
   "scripts": {
-    "dev": "vite viewer",
-    "build": "vite build viewer --outDir dist --emptyOutDir",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "node --test test/*.test.js"
   },
   "peerDependencies": { "three": ">=0.150.0" },

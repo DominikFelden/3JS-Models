@@ -9,7 +9,7 @@ const scene = new Scene();
 scene.background = new Color(0xdddddd);
 const camera = new PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 1000);
 const renderer = new WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(devicePixelRatio);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
@@ -19,6 +19,7 @@ sun.position.set(5, 10, 7);
 scene.add(sun, new GridHelper(10, 10));
 
 const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
 let current = null;
 
 const select = document.getElementById('select');
