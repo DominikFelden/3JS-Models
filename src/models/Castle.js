@@ -4,8 +4,17 @@ import { WorldModel, MergeBuilder, shared, material, stoneMaterial } from '../Wo
 /** Highest supported castle complexity. */
 export const MAX_CASTLE_COMPLEXITY = 5;
 
-const STONES = [0x9a9690, 0x8d8a85, 0xa39e94, 0x948f86];
-const ROOFS = [0x8b2f2f, 0x2f4f7a, 0x5b3a29];
+// Wall pattern -> matching colours; the pattern is picked per castle.
+const STONE_STYLES = {
+  stone: [0x9a9690, 0x8d8a85, 0xa39e94, 0x948f86, 0xb3a88f],
+  brick: [0xb5573c, 0xa34a34, 0x9c6a50],
+  cobble: [0xa09b90, 0x8a8478, 0xb0a58f],
+  mossy: [0xa0a094, 0x939a86],
+  plaster: [0xe0d6c2, 0xd8cdb8, 0xcfd2c8],
+};
+const STONE_KINDS = Object.keys(STONE_STYLES);
+const ROOFS = [0x8b2f2f, 0x2f4f7a, 0x5b3a29, 0x3f5a3a, 0x5e5e63, 0x7a3b6a, 0xa0683c];
+const TOWER_ROOFS = ['cone', 'pyramid', 'crenel', 'mixed'];
 const BANNERS = [0xb03030, 0x2f5f9a, 0xc9a227, 0x3a7a4a];
 const SHUTTERS = [0x2f5f4a, 0x7a3030, 0x3a4f7a, 0x5a3b22];
 const Y = new Vector3(0, 1, 0);
@@ -30,7 +39,11 @@ const gableG = () => shared('castle:gable', () => {                             
 /**
  * Procedural castle. Footprint centred on the origin, base at y = 0, the gate
  * faces +Z. Everything is random (random `seed` by default) so no two castles
- * are identical, even with the same complexity.
+ * are identical, even with the same complexity. The seed changes the wall
+ * material (stone, brick, cobble, mossy, plaster), roof colour and tower roof
+ * style (cones, pyramids, battlements or a mix), tower height and thickness,
+ * keep size and height, courtyard shape (square, wide or deep) and how far
+ * the back corners bulge out, wall height, and the gate width.
  *
  * complexity (0..5, default 1):
  *  0  a lone fortified keep (pyramid roof)
@@ -62,23 +75,32 @@ export class Castle extends WorldModel {
     const c = this.complexity;
     const b = new MergeBuilder();
     this._b = b;
-    this._stone = stoneMaterial(STONES[Math.floor(this.random() * STONES.length)]);
+    const kind = STONE_KINDS[Math.floor(this.random() * STONE_KINDS.length)];
+    const palette = STONE_STYLES[kind];
+    this._stone = stoneMaterial(palette[Math.floor(this.random() * palette.length)], kind);
+    this._towerRoof = TOWER_ROOFS[Math.floor(this.random() * TOWER_ROOFS.length)];
+    this._th = this.rand(0.75, 1.7);   // tower height factor
+    this._tr = this.rand(0.9, 1.25);   // tower radius factor
+    this._wallS = this.rand(0.8, 1.5); // wall height factor
+    this._stretch = [1, 1.35, 1.7][Math.floor(this.random() * 3)] * this.rand(0.95, 1.1); // courtyard width / depth
+    this._jit = this.rand(0.02, 0.4);  // how far the back corners bulge out
+    this._gateW = this.rand(0.9, 1.3);
     this._roof = material(ROOFS[Math.floor(this.random() * ROOFS.length)], true, true);
     this._banner = material(BANNERS[Math.floor(this.random() * BANNERS.length)], true);
 
     // Keep: bigger and taller with complexity.
-    const keepW = (c === 0 ? 4 : 3 + Math.min(c, 3) * 0.3) * this.rand(0.9, 1.05);
-    const keepD = keepW * this.rand(0.9, 1.05);
-    const keepH = (3.5 + c * 0.7) * this.rand(0.9, 1.15);
+    const keepW = (c === 0 ? 4 : 3 + Math.min(c, 3) * 0.3) * this.rand(0.85, 1.05);
+    const keepD = keepW * this.rand(0.85, 1.05);
+    const keepH = (3.5 + c * 0.7) * this.rand(0.75, 1.5);
     this._keep(keepW, keepD, keepH, c);
 
     if (c >= 1) {
       // Inner curtain wall. At complexity 1 only corner towers (no jitter on corner positions).
       const mid = c >= 2 ? Math.min(c - 1, 3) : 0;
-      this._ring({ H: 6, gate: 2, cornerR: 1, cornerH: 4, midR: 0.7, midH: 3.2, wallH: 2.4, mid, gateTowers: c >= 2 });
+      this._ring({ H: 6, gate: 2 * this._gateW, cornerR: 1, cornerH: 4, midR: 0.7, midH: 3.2, wallH: 2.4, mid, gateTowers: c >= 2 });
     }
     if (c >= 3) {
-      this._ring({ H: 10, gate: 3, cornerR: 1.3, cornerH: 4.5, midR: 0.9, midH: 3.5, wallH: 2, mid: Math.min(c - 2, 3), gateTowers: true });
+      this._ring({ H: 10, gate: 3 * this._gateW, cornerR: 1.3, cornerH: 4.5, midR: 0.9, midH: 3.5, wallH: 2, mid: Math.min(c - 2, 3), gateTowers: true });
       // Turrets on the keep corners.
       for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
         this._tower(sx * keepW / 2, sz * keepD / 2, 0.45, this.rand(1.2, 1.8), keepH, false);
@@ -197,7 +219,7 @@ export class Castle extends WorldModel {
    */
   _tower(x, z, r, h, y0 = 0, windows = true) {
     const b = this._b;
-    const crenel = y0 === 0 && this.random() < 0.35;
+    const crenel = y0 === 0 && (this._towerRoof === 'crenel' ? this.random() < 0.9 : this._towerRoof === 'mixed' && this.random() < 0.4);
     if (crenel) h *= 1.1;
     this._stoneCyl([x, y0 + h / 2, z], [r, h, r]);
     if (y0 === 0) this._stoneCyl([x, 0.25, z], [r * 1.12, 0.5, r * 1.12]); // plinth
@@ -214,10 +236,20 @@ export class Castle extends WorldModel {
         });
       }
     } else {
-      const roofH = r * this.rand(1.3, 2.2);
+      const roofH = r * this.rand(1.3, 2.6);
       const o = this.rand(1.15, 1.35); // roof overhang
-      b.add(coneG(), this._roof, { position: [x, y0 + h + roofH / 2, z], scale: [r * o, roofH, r * o], tint: this._tint() });
-      this.addShape('cone', { radius: r * o, height: roofH }, [x, y0 + h + roofH / 2, z], null, 'roof');
+      const pyramid = this._towerRoof === 'pyramid' || (this._towerRoof === 'mixed' && this.random() < 0.5);
+      if (pyramid) {
+        const k = r * o * 1.2, e = k * 0.7071;
+        b.add(pyramidG(), this._roof, { position: [x, y0 + h + roofH / 2, z], scale: [k, roofH, k], tint: this._tint() });
+        this.addShape('convex', { points: [
+          [x - e, y0 + h, z - e], [x + e, y0 + h, z - e], [x + e, y0 + h, z + e], [x - e, y0 + h, z + e],
+          [x, y0 + h + roofH, z],
+        ] }, [0, 0, 0], null, 'roof');
+      } else {
+        b.add(coneG(), this._roof, { position: [x, y0 + h + roofH / 2, z], scale: [r * o, roofH, r * o], tint: this._tint() });
+        this.addShape('cone', { radius: r * o, height: roofH }, [x, y0 + h + roofH / 2, z], null, 'roof');
+      }
     }
     if (!windows || r < 0.6) return;
     const out = Math.atan2(x, z);              // direction pointing away from the origin
@@ -257,13 +289,13 @@ export class Castle extends WorldModel {
     // Short runs (e.g. beside the gate) get fewer towers so neighbours never overlap:
     // spacing (minus 12% for the random jitter) must clear both radii plus a margin.
     const dist = Math.hypot(to.x - from.x, to.z - from.z);
-    const needed = Math.max(from.r, to.r) + p.midR * 1.1 + 0.25;
+    const needed = Math.max(from.r, to.r) + p.midR * this._tr * 1.1 + 0.25;
     while (mid > 0 && (dist / (mid + 1)) * 0.88 < needed) mid--;
     const nodes = [from];
     for (let i = 1; i <= mid; i++) {
       const t = i / (mid + 1) + this.rand(-0.05, 0.05);
-      const n = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t, r: p.midR * this.rand(0.85, 1.12) };
-      this._tower(n.x, n.z, n.r, p.midH * this.rand(0.8, 1.4));
+      const n = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t, r: p.midR * this._tr * this.rand(0.85, 1.12) };
+      this._tower(n.x, n.z, n.r, p.midH * this._th * this.rand(0.8, 1.4));
       nodes.push(n);
     }
     nodes.push(to);
@@ -272,7 +304,7 @@ export class Castle extends WorldModel {
       const dist = Math.hypot(c.x - a.x, c.z - a.z);
       const ux = (c.x - a.x) / dist, uz = (c.z - a.z) / dist;
       // Trim by tower radii so the wall starts/ends at the tower surface.
-      this._wall(a.x + ux * a.r, a.z + uz * a.r, c.x - ux * c.r, c.z - uz * c.r, p.wallH * this.rand(0.85, 1.25), 0.6);
+      this._wall(a.x + ux * a.r, a.z + uz * a.r, c.x - ux * c.r, c.z - uz * c.r, p.wallH * this._wallS * this.rand(0.85, 1.25), 0.6);
     }
   }
 
@@ -284,10 +316,12 @@ export class Castle extends WorldModel {
    */
   _ring(p) {
     const { H, gate } = p;
-    const j = () => this.rand(0, H * 0.22);
-    const spots = [[-H - j(), -H - j()], [H + j(), -H - j()], [H + j(), H], [-H - j(), H]];
-    const cs = spots.map(([x, z]) => ({ x, z, r: p.cornerR * this.rand(0.9, 1.2) }));
-    cs.forEach((n) => this._tower(n.x, n.z, n.r, p.cornerH * this.rand(0.85, 1.4)));
+    // Wider than deep for some castles: only x grows, the gate (z = H) stays put.
+    const Hx = H * this._stretch;
+    const j = () => this.rand(0, H * this._jit);
+    const spots = [[-Hx - j(), -H - j()], [Hx + j(), -H - j()], [Hx + j(), H], [-Hx - j(), H]];
+    const cs = spots.map(([x, z]) => ({ x, z, r: p.cornerR * this._tr * this.rand(0.9, 1.2) }));
+    cs.forEach((n) => this._tower(n.x, n.z, n.r, p.cornerH * this._th * this.rand(0.85, 1.4)));
 
     // Gate flank towers (optional, each its own size); otherwise the wall simply ends at the gate edge.
     const grL = p.gateTowers ? 0.8 * this.rand(0.9, 1.25) : 0;

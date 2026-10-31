@@ -45,40 +45,108 @@ export function material(color, flatShading = false, vertexColors = false) {
 /** Size in world units of one stone texture tile (4 courses of blocks). */
 export const STONE_TILE = 2.5;
 
-/**
- * Procedural block-masonry texture, drawn once on a canvas. Only available in a
- * browser (returns null elsewhere, e.g. under Node tests); models then fall
- * back to plain colour.
- */
-function stoneTexture() {
-  return shared('tex:stone', () => {
-    if (typeof document === 'undefined') return null;
-    const S = 256, rows = 4, rh = S / rows;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    const ctx = cv.getContext('2d');
-    const rnd = mulberry32(1234);
-    ctx.fillStyle = '#5c5a56';
+/** Surface patterns available to `surfaceMaterial` (procedural canvas textures). */
+export const SURFACES = ['stone', 'brick', 'cobble', 'plaster', 'planks', 'mossy', 'shingle'];
+
+/** Draw one pattern tile (grey-scale-ish; the material colour tints it). */
+function drawPattern(ctx, kind, S, rnd) {
+  const noise = (n, a) => {
+    for (let i = 0; i < n; i++) {
+      const v = Math.floor(rnd() * 255);
+      ctx.fillStyle = `rgba(${v},${v},${v},${a})`;
+      ctx.fillRect(rnd() * S, rnd() * S, 2, 2);
+    }
+  };
+  // Rows of blocks with random cut points; `gap` = mortar width.
+  const courses = (rows, minN, maxN, gap, lo, hi, mortar, tintFn) => {
+    const rh = S / rows;
+    ctx.fillStyle = mortar;
     ctx.fillRect(0, 0, S, S);
     for (let r = 0; r < rows; r++) {
-      const n = 3 + Math.floor(rnd() * 2);
+      const n = minN + Math.floor(rnd() * (maxN - minN + 1));
       const cuts = [];
       let x = rnd() * S;
       for (let i = 0; i < n; i++) { cuts.push(x); x += (S / n) * (0.7 + rnd() * 0.6); }
-      cuts.sort((a, b) => a - b);
+      cuts.sort((p, q) => p - q);
       cuts.forEach((c0, i) => {
         const c1 = i + 1 < n ? cuts[i + 1] : cuts[0] + S;
-        const v = 150 + Math.floor(rnd() * 70);
-        ctx.fillStyle = `rgb(${v},${v - 2},${v - 6})`;
-        for (const o of [0, -S]) ctx.fillRect(c0 + o + 2, r * rh + 2, c1 - c0 - 4, rh - 4);
+        const v = lo + Math.floor(rnd() * (hi - lo));
+        ctx.fillStyle = tintFn(v, rnd);
+        for (const o of [0, -S]) ctx.fillRect(c0 + o + gap, r * rh + gap, c1 - c0 - gap * 2, rh - gap * 2);
       });
     }
-    // Speckle noise for weathering.
-    for (let i = 0; i < 2500; i++) {
-      const v = Math.floor(rnd() * 255);
-      ctx.fillStyle = `rgba(${v},${v},${v},0.08)`;
-      ctx.fillRect(rnd() * S, rnd() * S, 2, 2);
+  };
+  const grey = (v) => `rgb(${v},${v - 2},${v - 6})`;
+  if (kind === 'brick') {
+    courses(8, 4, 4, 1.5, 175, 245, '#8a8a8a', (v) => `rgb(${v},${v - 6},${v - 8})`);
+    noise(3000, 0.1);
+  } else if (kind === 'cobble') {
+    courses(6, 5, 7, 2.5, 140, 225, '#4a4845', grey);
+    noise(3500, 0.1);
+  } else if (kind === 'plaster') {
+    ctx.fillStyle = '#e9e6e0';
+    ctx.fillRect(0, 0, S, S);
+    for (let i = 0; i < 40; i++) {
+      const v = 200 + Math.floor(rnd() * 50);
+      ctx.fillStyle = `rgba(${v},${v},${v - 6},0.25)`;
+      ctx.beginPath();
+      ctx.arc(rnd() * S, rnd() * S, 8 + rnd() * 30, 0, Math.PI * 2);
+      ctx.fill();
     }
+    noise(4000, 0.07);
+  } else if (kind === 'planks') {
+    const n = 8, w = S / n;
+    for (let i = 0; i < n; i++) {
+      const v = 170 + Math.floor(rnd() * 70);
+      ctx.fillStyle = `rgb(${v},${v - 4},${v - 10})`;
+      ctx.fillRect(i * w, 0, w, S);
+      for (let g = 0; g < 14; g++) {
+        const gv = Math.floor(rnd() * 120);
+        ctx.fillStyle = `rgba(${gv},${gv},${gv},0.1)`;
+        ctx.fillRect(i * w + rnd() * w, 0, 1 + rnd() * 1.5, S);
+      }
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fillRect(i * w, 0, 2, S);
+    }
+  } else if (kind === 'shingle') {
+    const rows = 8, rh = S / rows, cols = 8, cw = S / cols;
+    ctx.fillStyle = '#555';
+    ctx.fillRect(0, 0, S, S);
+    for (let r = 0; r < rows; r++) for (let c = 0; c <= cols; c++) {
+      const v = 160 + Math.floor(rnd() * 80);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      const x = c * cw + (r % 2 ? cw / 2 : 0) - cw / 2;
+      ctx.beginPath();
+      ctx.roundRect(x + 1, r * rh + 1, cw - 2, rh * 1.4, [0, 0, cw / 2, cw / 2]);
+      ctx.fill();
+    }
+    noise(1500, 0.08);
+  } else {
+    courses(4, 3, 4, 2, 150, 220, '#5c5a56', grey);
+    if (kind === 'mossy') {
+      for (let i = 0; i < 90; i++) {
+        ctx.fillStyle = `rgba(${40 + rnd() * 30},${110 + rnd() * 50},${30 + rnd() * 30},${0.2 + rnd() * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(rnd() * S, rnd() * S, 3 + rnd() * 14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    noise(2500, 0.08);
+  }
+}
+
+/**
+ * Procedural texture of the given pattern, drawn once on a canvas. Only
+ * available in a browser (returns null elsewhere, e.g. under Node tests);
+ * models then fall back to plain colour.
+ */
+function patternTexture(kind) {
+  return shared(`tex:${kind}`, () => {
+    if (typeof document === 'undefined') return null;
+    const S = 256;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    drawPattern(cv.getContext('2d'), kind, S, mulberry32(1234 + SURFACES.indexOf(kind)));
     const t = new CanvasTexture(cv);
     t.wrapS = t.wrapT = RepeatWrapping;
     t.colorSpace = SRGBColorSpace;
@@ -87,10 +155,42 @@ function stoneTexture() {
   });
 }
 
+/**
+ * Vertex-coloured material with a procedural surface pattern (one of
+ * SURFACES), where canvases exist. Use with `uv: 'box' | 'cyl'` in MergeBuilder.
+ */
+export function surfaceMaterial(kind, color) {
+  return shared(`mat:${kind}:${color}`, () => new MeshStandardMaterial({
+    color, flatShading: true, roughness: 0.95, vertexColors: true, map: patternTexture(kind),
+  }));
+}
+
 /** Weathered stone: vertex-coloured, with a masonry texture where canvases exist. */
-export function stoneMaterial(color) {
-  return shared(`mat:stone:${color}`, () => new MeshStandardMaterial({
-    color, flatShading: true, roughness: 0.95, vertexColors: true, map: stoneTexture(),
+export function stoneMaterial(color, kind = 'stone') {
+  return surfaceMaterial(kind, color);
+}
+
+/** Bark: plain material with a wood-grain texture where canvases exist. */
+export function barkMaterial(color) {
+  return shared(`mat:bark:${color}`, () => new MeshStandardMaterial({
+    color, flatShading: true, roughness: 1,
+    map: shared('tex:bark', () => {
+      if (typeof document === 'undefined') return null;
+      const W = 64, H = 128, cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d'), rnd = mulberry32(77);
+      ctx.fillStyle = '#c8c8c8';
+      ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < 40; i++) {
+        const v = 90 + Math.floor(rnd() * 110);
+        ctx.fillStyle = `rgba(${v},${v},${v},0.5)`;
+        ctx.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 3, 10 + rnd() * 50);
+      }
+      const t = new CanvasTexture(cv);
+      t.wrapS = t.wrapT = RepeatWrapping;
+      t.colorSpace = SRGBColorSpace;
+      return t;
+    }),
   }));
 }
 
