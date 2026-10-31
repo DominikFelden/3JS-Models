@@ -281,3 +281,19 @@ test('Seeds change models substantially: tree height, castle layout, house walls
   assert.ok(layouts.size > 8, 'castle layouts vary');
   assert.ok(walls.size > 8, 'wall colours vary');
 });
+
+import { LeafTree, OvalLeaf, TriangleLeaf } from '../src/index.js';
+
+test('LeafTree builds leaves that hang and face up/outward', () => {
+  const t = new LeafTree({ seed: 3 });
+  assert.ok(t.leaves.length > 100);
+  assert.ok(t.leafClass === OvalLeaf || t.leafClass === TriangleLeaf);
+  assert.strictEqual(t.getColliderTags()[1], 'crown');
+  t.leaves.forEach((l) => {
+    assert.ok(l.direction.y < 0);
+    const n = new Vector3(0, 1, 0).applyQuaternion(l.quaternion);
+    assert.ok(n.y > -0.2); // upper face stays turned to the sky
+  });
+  const a = new LeafTree({ seed: 3 });
+  assert.strictEqual(a.leaves.length, t.leaves.length);
+});
