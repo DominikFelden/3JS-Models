@@ -17,8 +17,8 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
 test('position, size and rotation are applied to colliders', () => {
   const t = new OakTree({ position: [10, 0, 5], size: 2 });
   const [trunk] = t.getColliders();
-  assert.ok(near(trunk.position[0], 10) && near(trunk.position[1], 2) && near(trunk.position[2], 5));
-  assert.ok(near(trunk.radius, 0.8) && near(trunk.height, 4));
+  assert.ok(near(trunk.position[0], 10) && near(trunk.position[1], 2 * t.th) && near(trunk.position[2], 5));
+  assert.ok(near(trunk.radius, 0.8 * t.tw) && near(trunk.height, 4 * t.th));
 });
 
 test('rotation rotates offset shapes (Castle tower)', () => {
@@ -264,4 +264,20 @@ test('Castle ground-level towers never overlap each other', () => {
       assert.ok(d >= towers[i].radius + towers[j].radius, `towers overlap (complexity ${n % 6})`);
     }
   }
+});
+
+test('Seeds change models substantially: tree height, castle layout, house walls', () => {
+  const heights = new Set(), layouts = new Set(), walls = new Set(), balconies = new Set();
+  for (let seed = 0; seed < 40; seed++) {
+    heights.add(new PineTree({ seed, complexity: 2 }).getBounds().max[1].toFixed(1));
+    heights.add(new OakTree({ seed }).getBounds().max[1].toFixed(1));
+    const cb = new Castle({ seed, complexity: 3 }).getBounds();
+    layouts.add(`${cb.min[0].toFixed(0)}:${cb.max[1].toFixed(0)}`);
+    const h = new House({ seed, type: 'towerhouse' });
+    walls.add(h.children[0].material.color.getHex());
+    balconies.add(h.children.length);
+  }
+  assert.ok(heights.size > 20, 'tree heights vary');
+  assert.ok(layouts.size > 8, 'castle layouts vary');
+  assert.ok(walls.size > 8, 'wall colours vary');
 });
