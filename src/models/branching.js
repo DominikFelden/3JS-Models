@@ -1,0 +1,79 @@
+import { CylinderGeometry, Vector3, Quaternion } from 'three';
+import { shared } from '../WorldModel.js';
+
+const Y = new Vector3(0, 1, 0);
+
+/** Highest supported tree complexity (keeps vertex counts reasonable). */
+export const MAX_TREE_COMPLEXITY = 5;
+
+/**
+ * Unit branch: base radius 1, top radius 0.7, height 1, base at the origin and
+ * growing along +Y. Scaled per branch to (radius, length, radius). Only 5 sides
+ * because branches are thin.
+ */
+function branchGeometry() {
+  return shared('branch:unit', () => {
+    const g = new CylinderGeometry(0.7, 1, 1, 5, 1);
+    g.translate(0, 0.5, 0);
+    return g;
+  });
+}
+
+/** Random unit-ish perturbation of `dir`, `spread` ~ how far it may bend. */
+function bend(dir, spread, rnd) {
+  const v = new Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(2 * spread);
+  return dir.clone().add(v).normalize();
+}
+
+/**
+ * Recursively grows branches and sub-branches.
+ *
+ * Every branch is added as visual (via `builder`) AND as a cylinder collider
+ * (via `model.addShape`, tag 'branch'), so the exposed geometry matches what
+ * is drawn. Returns the branch tips, used by the caller to place leaves.
+ *
+ * Level semantics: `levels` = number of branching generations. levels = 1 is a
+ * single set of branches, levels = 3 means branches with sub-branches with
+ * sub-sub-branches. Each branch spawns 2 children (sometimes 3).
+ *
+ * @param {WorldModel} model   receives the colliders
+ * @param {MergeBuilder} builder  receives the visual geometry
+ * @param {Material} mat       bark material
+ * @param {Function} rnd       PRNG function
+ * @param {object} root        {pos:Vector3, dir:Vector3, length, radius} first branch
+ * @param {number} levels      remaining generations (including this one)
+ * @param {object} opts        {spread, shrink, thin, upward}
+ * @returns {Vector3[]} tips of the outermost branches
+ */
+export function growBranch(model, builder, mat, rnd, root, levels, opts, tips = []) {
+  const { pos, dir, length, radius } = root;
+  const end = pos.clone().addScaledVector(dir, length);
+
+  // Visual: unit branch rotated from +Y onto `dir`, scaled to size.
+  const quat = new Quaternion().setFromUnitVectors(Y, dir);
+  builder.add(branchGeometry(), mat, { position: pos.toArray(), quaternion: quat, scale: [radius, length, radius] });
+
+  // Collider: cylinder centred half way along the branch.
+  const centre = pos.clone().addScaledVector(dir, length / 2);
+  model.addShape('cylinder', { radius: radius * 0.85, height: length }, centre.toArray(), quat.clone(), 'branch');
+
+  if (levels <= 1) {
+    tips.push(end);
+    return tips;
+  }
+  const children = rnd() < 0.15 ? 3 : 2;
+  for (let i = 0; i < children; i++) {
+    // Fork somewhere on the outer 30% of the parent so branches look staggered.
+    const start = pos.clone().addScaledVector(dir, length * (0.7 + rnd() * 0.3));
+    const childDir = bend(dir, opts.spread, rnd);
+    childDir.y += opts.upward; // branches reach a bit for the light
+    childDir.normalize();
+    growBranch(model, builder, mat, rnd, {
+      pos: start,
+      dir: childDir,
+      length: length * (opts.shrink - 0.08 + rnd() * 0.16),
+      radius: Math.max(0.015, radius * opts.thin),
+    }, levels - 1, opts, tips);
+  }
+  return tips;
+}
