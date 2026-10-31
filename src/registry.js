@@ -1,5 +1,5 @@
 import {
-  SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle,
+  SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
 } from './index.js';
 
@@ -13,6 +13,7 @@ export const models = [
   { name: 'SimpleTree', create: () => new SimpleTree() },
   { name: 'PineTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, create: (o) => new PineTree(o) },
   { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, create: (o) => new OakTree(o) },
+  { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, create: (o) => new LeafTree(o) },
   { name: 'Bush', create: (o) => new Bush(o) },
   { name: 'Rock', create: (o) => new Rock({ seed: o.seed }) },
   { name: 'House (cottage)', create: (o) => new House({ type: 'cottage', seed: o.seed }) },

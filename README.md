@@ -17,6 +17,7 @@ scene.add(new SimpleTree());
 | `SimpleTree` | – | Trunk + sphere (legacy, plain `Group`, no collider API) | – |
 | `PineTree` | `complexity` 0-5, `seed` | Trunk + 3 cones; with complexity: whorls of branches and sub-branches with needle tufts | `trunk`, `crown`, then `branch`* |
 | `OakTree` | `complexity` 0-5, `seed` | Thick trunk + 3 spheres; with complexity: spreading limbs, sub-branches, leaf blobs on tips | `trunk`, `crown`, then `branch`* |
+| `LeafTree` | `complexity` 0-5 (default 4), `seed` | Trunk, limbs forking into branches and twigs, ending in hanging flat oval or triangle `Leaf` objects (`OvalLeaf`, `TriangleLeaf`) | `trunk`, `crown`, then `branch`* |
 | `Bush` | – | 3 squashed spheres | `sphere` |
 | `Rock` | `seed` | Randomly displaced icosahedron; the seed picks one of 64 shared shapes (`seed % 64`) | `convex` |
 | `House` | `type` (`'cottage'`, `'longhouse'`, `'towerhouse'`), `seed` | Box walls, pyramid or gable roof, door, windows on all walls | `body`, `roof` |
