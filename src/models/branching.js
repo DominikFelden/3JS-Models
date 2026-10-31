@@ -42,7 +42,10 @@ function bend(dir, spread, rnd) {
  * @param {Function} rnd       PRNG function
  * @param {object} root        {pos:Vector3, dir:Vector3, length, radius} first branch
  * @param {number} levels      remaining generations (including this one)
- * @param {object} opts        {spread, shrink, thin, upward}
+ * @param {object} opts        {spread, shrink, thin, upward, joints?}. If `joints`
+ *                             (an array) is given, the end point of every branch
+ *                             that forks further is pushed to it (foliage spots
+ *                             along the twigs, not only on the tips).
  * @returns {Vector3[]} tips of the outermost branches
  */
 export function growBranch(model, builder, mat, rnd, root, levels, opts, tips = []) {
@@ -61,6 +64,7 @@ export function growBranch(model, builder, mat, rnd, root, levels, opts, tips = 
     tips.push(end);
     return tips;
   }
+  opts.joints?.push(end);
   const children = rnd() < 0.15 ? 3 : 2;
   for (let i = 0; i < children; i++) {
     // Fork somewhere on the outer 30% of the parent so branches look staggered.

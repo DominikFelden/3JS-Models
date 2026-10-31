@@ -22,11 +22,13 @@ test('position, size and rotation are applied to colliders', () => {
 });
 
 test('rotation rotates offset shapes (Castle tower)', () => {
-  const c = new Castle({ rotation: Math.PI / 2 });
-  const towers = c.getColliders().filter((_, i) => c.getColliderTags()[i] === 'tower');
-  assert.strictEqual(towers.length, 4);
-  // Original tower at (6, ., 6) rotates by 90deg about Y to (6, ., -6).
-  assert.ok(towers.some((t) => near(t.position[0], 6) && near(t.position[2], -6)));
+  const plain = new Castle({ seed: 5 });
+  const turned = new Castle({ seed: 5, rotation: Math.PI / 2 });
+  const towers = (c) => c.getColliders().filter((_, i) => c.getColliderTags()[i] === 'tower');
+  const a = towers(plain), b = towers(turned);
+  assert.strictEqual(a.length, 4);
+  // A 90deg turn about Y maps (x, z) to (z, -x).
+  a.forEach((t, i) => assert.ok(near(b[i].position[0], t.position[2]) && near(b[i].position[2], -t.position[0])));
 });
 
 test('Rock exposes convex hull and is deterministic per seed', () => {
