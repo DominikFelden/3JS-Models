@@ -1,0 +1,15 @@
+{
+  "name": "3js-models",
+  "version": "0.1.0",
+  "description": "A collection of 3D models created from simple ThreeJS geometries.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "scripts": {
+    "dev": "vite viewer",
+    "build": "vite build viewer --outDir dist --emptyOutDir",
+    "test": "node --test test/*.test.js"
+  },
+  "peerDependencies": { "three": ">=0.150.0" },
+  "devDependencies": { "three": "^0.170.0", "vite": "^5.4.0" }
+}
