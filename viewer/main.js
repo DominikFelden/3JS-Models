@@ -21,10 +21,25 @@ scene.add(sun, new GridHelper(10, 10));
 const controls = new OrbitControls(camera, renderer.domElement);
 let current = null;
 
-function show(index) {
-  if (current) scene.remove(current);
-  current = models[index].create();
+const select = document.getElementById('select');
+const slider = document.getElementById('complexity');
+const sliderValue = document.getElementById('complexityValue');
+const sliderRow = document.getElementById('complexityRow');
+const rerollButton = document.getElementById('reroll');
+const seedLabel = document.getElementById('seed');
+
+/** (Re)build the selected model. `reframe` moves the camera to fit the new model. */
+function show(reframe) {
+  const entry = models[Number(select.value)];
+  if (current) {
+    scene.remove(current);
+    current.dispose?.(); // free this model's own geometries (shared ones stay)
+  }
+  // No seed given -> every build is a new random variation.
+  current = entry.create({ complexity: Number(slider.value) });
+  seedLabel.textContent = current.seed !== undefined ? `seed ${current.seed}` : '';
   scene.add(current);
+  if (!reframe) return;
   const box = new Box3().setFromObject(current);
   const size = box.getSize(new Vector3()).length();
   const center = box.getCenter(new Vector3());
@@ -33,10 +48,24 @@ function show(index) {
   controls.update();
 }
 
-const select = document.getElementById('select');
+/** Show the slider only for models that support complexity, and set its range. */
+function configureSlider() {
+  const c = models[Number(select.value)].complexity;
+  sliderRow.style.display = c ? '' : 'none';
+  if (c) {
+    slider.max = c.max;
+    slider.value = c.value;
+    sliderValue.textContent = c.value;
+  }
+}
+
 models.forEach((m, i) => select.add(new Option(m.name, i)));
-select.addEventListener('change', () => show(Number(select.value)));
-show(0);
+select.addEventListener('change', () => { configureSlider(); show(true); });
+// Rebuild live while dragging; keep the camera where the user put it.
+slider.addEventListener('input', () => { sliderValue.textContent = slider.value; show(false); });
+rerollButton.addEventListener('click', () => show(false));
+configureSlider();
+show(true);
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;

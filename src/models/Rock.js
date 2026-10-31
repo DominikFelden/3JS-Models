@@ -1,29 +1,24 @@
 import { IcosahedronGeometry } from 'three';
-import { WorldModel, shared, material } from '../WorldModel.js';
+import { WorldModel, shared, material, mulberry32 } from '../WorldModel.js';
 
-/** Small deterministic PRNG so the same seed always gives the same rock. */
-function mulberry32(a) {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** Number of distinct rock shapes (bounds the shared geometry cache). */
+export const ROCK_VARIANTS = 64;
 
 /**
  * Rock: icosahedron with randomly displaced vertices (flat shaded).
- * Option `seed` (integer) selects one of the shape variants; geometry is
- * cached per seed so equal seeds share buffers.
+ * The model's `seed` (random by default, see WorldModel) selects one of
+ * ROCK_VARIANTS shapes (seed % ROCK_VARIANTS). Geometry is cached per variant,
+ * so any number of rocks share at most ROCK_VARIANTS sets of GPU buffers, and
+ * the same seed always gives the same rock.
  * Collider: 'convex' hull = the displaced vertices (a rock is convex enough).
  */
 export class Rock extends WorldModel {
   constructor(options = {}) {
     super('Rock', options);
-    const seed = options.seed ?? 0;
-    const g = shared(`rock:${seed}`, () => {
+    const variant = this.seed % ROCK_VARIANTS;
+    const g = shared(`rock:${variant}`, () => {
       const geo = new IcosahedronGeometry(0.8, 0); // 12 vertices before subdivision
-      const rnd = mulberry32(seed);
+      const rnd = mulberry32(variant);
       const pos = geo.attributes.position;
       const moved = new Map(); // same displacement for coincident vertices, avoids cracks
       for (let i = 0; i < pos.count; i++) {

@@ -9,7 +9,14 @@
   </style>
 </head>
 <body>
-  <div id="menu"><label>Model: <select id="select"></select></label></div>
+  <div id="menu">
+    <label>Model: <select id="select"></select></label>
+    <div id="complexityRow" style="margin-top:6px">
+      <label>Complexity: <input id="complexity" type="range" min="0" max="5" step="1" value="0" />
+      <span id="complexityValue">0</span></label>
+    </div>
+    <div style="margin-top:6px"><button id="reroll">Re-roll (new random seed)</button> <span id="seed"></span></div>
+  </div>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
