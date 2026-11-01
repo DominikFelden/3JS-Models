@@ -15,15 +15,17 @@ scene.add(new SimpleTree());
 | Class | Options besides position/rotation/size | Description | Collider tags (in order) |
 |---|---|---|---|
 | `SimpleTree` | – | Trunk + sphere (legacy, plain `Group`, no collider API) | – |
-| `PineTree` | `complexity` 0-5, `seed` | Trunk + 3 cones; with complexity: whorls of branches and sub-branches with needle tufts | `trunk`, `crown`, then `branch`* |
-| `OakTree` | `complexity` 0-5, `seed` | Thick trunk + 3 spheres; with complexity: spreading limbs, sub-branches, leaf blobs on tips | `trunk`, `crown`, then `branch`* |
-| `LeafTree` | `complexity` 0-5 (default 4), `seed` | Trunk, limbs forking into branches and twigs, ending in hanging flat oval or triangle `Leaf` objects (`OvalLeaf`, `TriangleLeaf`) | `trunk`, `crown`, then `branch`* |
+| `PineTree` | `complexity` 0-20, `seed`, tree style options | Trunk + 3 cones; with complexity: whorls of branches and sub-branches with needle tufts | `trunk`, `crown`, then `branch`* |
+| `OakTree` | `complexity` 0-20, `seed`, tree style options | Thick trunk + 3 spheres; with complexity: spreading limbs, sub-branches, leaf blobs on tips | `trunk`, `crown`, then `branch`* |
+| `LeafTree` | `complexity` 0-20 (default 4), `seed`, `leafType`, tree style options | Trunk, limbs forking into branches and twigs, ending in hanging flat `Leaf` objects: oval, triangle, oak (several ovals), maple (several triangles), birch, willow, ginkgo, clover, ash (see `LEAF_TYPES`) | `trunk`, `crown`, then `branch`* |
 | `Bush` | – | 3 squashed spheres | `sphere` |
 | `Rock` | `seed` | Randomly displaced icosahedron; the seed picks one of 64 shared shapes (`seed % 64`) | `convex` |
 | `House` | `type` (`'cottage'`, `'longhouse'`, `'towerhouse'`), `seed` | Box walls, pyramid or gable roof, door, windows on all walls | `body`, `roof` |
 | `Castle` | `complexity` 0-5 (default 1), `seed` | Keep, curtain walls, towers, gates, halls, windows (see below) | `keep`, `tower`, `roof`, `wall`, `hall`, `turret` |
 | `Wall`, `Door`, `Window`, `Column`, `Roof` (`type`: gable/hip/flat), `Chimney`, `Stairs`, `Railing`, `Balcony` | size options, `seed` | Building parts, each a standalone model usable as a building block | one shape each |
 | `Grass`, `BirdsNest`, `Flower`, `FlowerBud`, `LeafModel` | `seed` | Plant parts (`LeafModel` shows an `OvalLeaf`/`TriangleLeaf`) | one shape each |
+
+Tree style options (all trees, optional, otherwise seed-driven): `trunkHeight`, `trunkThickness`, `leafSize` (factors, 1 = default) and `trunkColor`, `leafColor` (any three.js colour). `leafType` (key of `LEAF_TYPES`) is for `LeafTree`. Above complexity 5 branching generations grow slowly (20 = 8 generations); extra complexity adds more limbs and foliage.
 
 \* The branch colliders are only present when `complexity > 0`.
 
@@ -131,7 +133,7 @@ Foliage shapes are bounding shapes of the crown; whether to collide with them is
 npm install
 npm run dev
 ```
-Open the printed URL and pick a model in the menu. For models that support it a **Complexity slider** appears; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. New models are registered in `src/registry.js`.
+Open the printed URL and pick a model in the menu. For models that support it a **Complexity slider** appears (trees: up to 20) and trees get a **Tree parameters…** modal with trunk height/thickness, leaf size, leaf type (Leaf-Tree) and trunk/leaf colour pickers; tick *Show below* to pin a control under the 3D view. Re-roll randomizes all of them. Sliders keep the current seed; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. New models are registered in `src/registry.js`.
 
 ## Tests
 `npm test`

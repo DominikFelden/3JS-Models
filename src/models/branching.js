@@ -1,10 +1,34 @@
-import { CylinderGeometry, Vector3, Quaternion } from 'three';
+import { CylinderGeometry, Vector3, Quaternion, Color } from 'three';
 import { shared } from '../WorldModel.js';
 
 const Y = new Vector3(0, 1, 0);
 
 /** Highest supported tree complexity (keeps vertex counts reasonable). */
-export const MAX_TREE_COMPLEXITY = 5;
+export const MAX_TREE_COMPLEXITY = 20;
+
+/**
+ * Branching generations for a tree complexity. Branches double per generation,
+ * so beyond 5 extra complexity adds generations slowly (20 -> 8) and the rest
+ * of the detail (more limbs, denser foliage) comes from the tree itself.
+ */
+export function branchLevels(complexity) {
+  return complexity <= 5 ? complexity : 5 + Math.round((complexity - 5) / 5);
+}
+
+const num = (v, lo, hi) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined);
+const hex = (v) => { try { return v === undefined || v === null ? undefined : new Color(v).getHex(); } catch { return undefined; } };
+
+/**
+ * User-controllable tree style from constructor options. Each value is
+ * undefined when not given (the tree then keeps its seed-driven default).
+ * Factors multiply the seed-driven size: trunkHeight, trunkThickness, leafSize.
+ */
+export function treeStyle(o = {}) {
+  return {
+    trunkHeight: num(o.trunkHeight, 0.3, 3), trunkThickness: num(o.trunkThickness, 0.3, 3), leafSize: num(o.leafSize, 0.3, 4),
+    trunkColor: hex(o.trunkColor), leafColor: hex(o.leafColor),
+  };
+}
 
 /**
  * Unit branch: base radius 1, top radius 0.7, height 1, base at the origin and
