@@ -1,12 +1,7 @@
 import { CylinderGeometry, SphereGeometry, ConeGeometry, Vector3 } from 'three';
 import { WorldModel, MergeBuilder, shared, material, barkMaterial } from '../WorldModel.js';
-import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.js';
+import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY, randomTrunkColor, randomLeafColor } from './branching.js';
 
-const PINE_GREENS = [0x1f6b3a, 0x2a7a4a, 0x174f33, 0x3b7d52, 0x2c5f5a];
-const PINE_BARKS = [0x6b4423, 0x5a3a24, 0x7a5a40];
-const OAK_LEAVES = [0x3f8f3a, 0x5aa03a, 0x2f7a3a, 0x8aa02f, 0xc9872a, 0xb5532a];
-const OAK_BARKS = [0x7a5230, 0x5e4a3a, 0x8a7a66, 0x4a3a2a];
-const pick = (rnd, arr) => arr[Math.floor(rnd() * arr.length)];
 
 /** Bounding sphere {centre, radius} around points, for a single crown collider. */
 function boundingSphere(points, extra) {
@@ -51,7 +46,7 @@ export class PineTree extends WorldModel {
     const trunkG = shared('pine:trunk', () => new CylinderGeometry(0.15, 0.22, 1.2, 6));
     const coneG = shared('pine:cone', () => new ConeGeometry(1, 1.6, 8));
     const st = treeStyle(options);
-    const randomGreen = pick(this.random, PINE_GREENS), randomBark = pick(this.random, PINE_BARKS);
+    const randomGreen = randomLeafColor(this.random), randomBark = randomTrunkColor(this.random);
     const green = material(st.leafColor ?? randomGreen, true, true);
     const bark = barkMaterial(st.trunkColor ?? randomBark);
     this.hf = this.rand(0.7, 1.6); // height factor
@@ -161,7 +156,7 @@ export class OakTree extends WorldModel {
     const crownG = shared('oak:crown', () => new SphereGeometry(1, 8, 6));
     const blobG = shared('oak:blob', () => new SphereGeometry(1, 7, 5)); // cheap leaf blob
     const st = treeStyle(options);
-    const randomLeaf = pick(this.random, OAK_LEAVES), randomBark = pick(this.random, OAK_BARKS);
+    const randomLeaf = randomLeafColor(this.random), randomBark = randomTrunkColor(this.random);
     const leaf = material(st.leafColor ?? randomLeaf, true, true);
     const bark = barkMaterial(st.trunkColor ?? randomBark);
     const th = this.th = this.rand(0.6, 1.6) * (st.trunkHeight ?? 1);   // trunk height factor

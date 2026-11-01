@@ -16,6 +16,14 @@ export function branchLevels(complexity) {
 }
 
 const num = (v, lo, hi) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined);
+const lerpHex = (a, b, t) => new Color(a).lerp(new Color(b), t).getHex();
+const LIGHT_BROWN = 0xa67c52, DARK_BROWN = 0x4a2f1a;
+const LIGHT_GREEN = 0x7cc04a, DARK_GREEN = 0x1f5a2a;
+const AUTUMN = [0xe8c53a, 0xd9a826, 0xc23b22, 0xa82a1e, 0x8a5a2b, 0x6b4423];
+/** Random trunk colour between light and dark brown. */
+export const randomTrunkColor = (rnd) => lerpHex(LIGHT_BROWN, DARK_BROWN, rnd());
+/** Random leaf colour: mostly light-to-dark green, sometimes yellow, red or brown. */
+export const randomLeafColor = (rnd) => (rnd() < 0.12 ? AUTUMN[Math.floor(rnd() * AUTUMN.length)] : lerpHex(LIGHT_GREEN, DARK_GREEN, rnd()));
 const hex = (v) => { try { return v === undefined || v === null ? undefined : new Color(v).getHex(); } catch { return undefined; } };
 
 /**

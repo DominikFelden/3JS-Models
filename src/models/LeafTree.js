@@ -1,16 +1,13 @@
 import { CylinderGeometry, Vector3, Color } from 'three';
 import { WorldModel, MergeBuilder, shared, barkMaterial } from '../WorldModel.js';
-import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.js';
+import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY, randomTrunkColor, randomLeafColor } from './branching.js';
 import { TriangleLeaf, LEAF_TYPES, leafMaterial } from './Leaf.js';
 
-const LEAF_COLOURS = [[0.35, 0.65, 0.22], [0.3, 0.58, 0.2], [0.45, 0.7, 0.2], [0.25, 0.5, 0.25], [0.7, 0.55, 0.15], [0.75, 0.35, 0.15]];
-const BARKS = [0x7a5230, 0x5e4a3a, 0x8a7a66, 0x4a3a2a];
-const pick = (rnd, arr) => arr[Math.floor(rnd() * arr.length)];
 
 /**
  * Leaf-Tree: a detailed tree. Trunk -> limbs -> branches -> twigs -> ... ->
  * leaves. Every generation forks into thinner, shorter twigs; the finest twigs
- * (and the forks near them) carry `Leaf` objects (flat ovals or triangles,
+ * (and the forks near them) carry `Leaf` objects (flat leaves,
  * chosen per tree by the seed) that hang down and face outward/up like on a real tree.
  *
  * complexity 0..20 (default 4): number of branching generations
@@ -30,15 +27,14 @@ export class LeafTree extends WorldModel {
     this.complexity = WorldModel.clampInt(options.complexity, 0, MAX_TREE_COMPLEXITY, 4);
     const rnd = this.random;
     const st = treeStyle(options);
-    const randomBark = pick(rnd, BARKS);
+    const randomBark = randomTrunkColor(rnd);
     const bark = barkMaterial(st.trunkColor ?? randomBark);
     const th = this.rand(0.8, 1.4) * (st.trunkHeight ?? 1), tw = this.rand(0.8, 1.2) * (st.trunkThickness ?? 1), cs = this.rand(0.9, 1.3);
     const types = Object.keys(LEAF_TYPES);
     const randomType = types[Math.floor(rnd() * types.length)];
     this.leafClass = LEAF_TYPES[options.leafType] ?? LEAF_TYPES[randomType];
-    const rgb = st.leafColor === undefined ? null : new Color(st.leafColor);
-    const randomColour = pick(rnd, LEAF_COLOURS);
-    const colour = rgb ? [rgb.r, rgb.g, rgb.b] : randomColour;
+    const rgb = new Color(st.leafColor ?? randomLeafColor(rnd));
+    const colour = [rgb.r, rgb.g, rgb.b];
 
     const builder = new MergeBuilder();
     builder.add(shared('leaftree:trunk', () => new CylinderGeometry(0.2, 0.34, 1, 7)), bark, { position: [0, th, 0], scale: [tw, 2 * th, tw] });
