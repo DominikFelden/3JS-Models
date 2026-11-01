@@ -5,6 +5,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { models } from '../src/registry.js';
+import { randomTrunkColor, randomLeafColor } from '../src/models/branching.js';
 
 const scene = new Scene();
 scene.background = new Color(0xbfd9ee);
@@ -157,7 +158,10 @@ function randomValue(def) {
     return +(def.min + Math.floor(Math.random() * (steps + 1)) * def.step).toFixed(3);
   }
   if (def.type === 'select') return def.options[Math.floor(Math.random() * def.options.length)][0];
-  return `#${new Color().setHSL(Math.random(), 0.35 + Math.random() * 0.5, 0.2 + Math.random() * 0.4).getHexString()}`;
+  const hexColor = def.key === 'trunkColor' ? randomTrunkColor(Math.random)
+    : def.key === 'leafColor' ? randomLeafColor(Math.random)
+    : new Color().setHSL(Math.random(), 0.35 + Math.random() * 0.5, 0.2 + Math.random() * 0.4).getHex();
+  return `#${new Color(hexColor).getHexString()}`;
 }
 
 /** New seed and new random values for every parameter. */
