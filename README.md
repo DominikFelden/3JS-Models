@@ -22,6 +22,8 @@ scene.add(new SimpleTree());
 | `Rock` | `seed` | Randomly displaced icosahedron; the seed picks one of 64 shared shapes (`seed % 64`) | `convex` |
 | `House` | `type` (`'cottage'`, `'longhouse'`, `'towerhouse'`), `seed` | Box walls, pyramid or gable roof, door, windows on all walls | `body`, `roof` |
 | `Castle` | `complexity` 0-5 (default 1), `seed` | Keep, curtain walls, towers, gates, halls, windows (see below) | `keep`, `tower`, `roof`, `wall`, `hall`, `turret` |
+| `Wall`, `Door`, `Window`, `Column`, `Roof` (`type`: gable/hip/flat), `Chimney`, `Stairs`, `Railing`, `Balcony` | size options, `seed` | Building parts, each a standalone model usable as a building block | one shape each |
+| `Grass`, `BirdsNest`, `Flower`, `FlowerBud`, `LeafModel` | `seed` | Plant parts (`LeafModel` shows an `OvalLeaf`/`TriangleLeaf`) | one shape each |
 
 \* The branch colliders are only present when `complexity > 0`.
 
@@ -141,3 +143,6 @@ Open the printed URL and pick a model in the menu. For models that support it a 
 - **Masonry texture:** castle stone uses a procedural canvas texture (browser only; plain colour under Node).
 - **Details:** merlons, plinths, string courses, chimneys, timber framing, stone foundations, root flares, roof ridge caps, flags.
 - **Viewer:** soft shadows, hemisphere sky light, fog, tone mapping and a grass ground. All models cast/receive shadows.
+
+## Viewer
+`npm run dev` opens the viewer. Models in `src/registry.js` are listed alphabetically; type in the search box to filter the drop-down.

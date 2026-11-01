@@ -39,6 +39,8 @@ controls.enableDamping = true;
 let current = null;
 
 const select = document.getElementById('select');
+const search = document.getElementById('search');
+const noMatch = document.getElementById('noMatch');
 const slider = document.getElementById('complexity');
 const sliderValue = document.getElementById('complexityValue');
 const sliderRow = document.getElementById('complexityRow');
@@ -76,8 +78,25 @@ function configureSlider() {
   }
 }
 
-models.forEach((m, i) => select.add(new Option(m.name, i)));
+/** Fill the drop-down with models whose name contains the search text (models are already sorted). */
+function fillSelect() {
+  const q = search.value.trim().toLowerCase();
+  const previous = select.value;
+  select.replaceChildren();
+  models.forEach((m, i) => { if (m.name.toLowerCase().includes(q)) select.add(new Option(m.name, i)); });
+  noMatch.style.display = select.options.length ? 'none' : '';
+  if ([...select.options].some((o) => o.value === previous)) select.value = previous;
+  return select.value !== previous && select.options.length > 0;
+}
+
+fillSelect();
 select.addEventListener('change', () => { configureSlider(); show(true); });
+search.addEventListener('input', () => {
+  if (fillSelect()) { configureSlider(); show(true); }
+});
+search.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && select.options.length) { select.selectedIndex = 0; select.dispatchEvent(new Event('change')); }
+});
 // Rebuild live while dragging; keep the camera where the user put it.
 slider.addEventListener('input', () => { sliderValue.textContent = slider.value; show(false); });
 rerollButton.addEventListener('click', () => show(false));

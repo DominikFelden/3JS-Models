@@ -297,3 +297,16 @@ test('LeafTree builds leaves that hang and face up/outward', () => {
   const a = new LeafTree({ seed: 3 });
   assert.strictEqual(a.leaves.length, t.leaves.length);
 });
+
+import { models } from '../src/registry.js';
+
+test('registry is sorted alphabetically and every model builds with a collider and finite bounds', () => {
+  const names = models.map((m) => m.name);
+  assert.deepStrictEqual(names, [...names].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true })));
+  for (const m of models.filter((x) => x.name !== 'SimpleTree')) {
+    const model = m.create({ complexity: 1 });
+    assert.ok(model.getColliders().length > 0, m.name);
+    const { min, max } = model.getBounds();
+    assert.ok([...min, ...max].every(Number.isFinite), m.name);
+  }
+});
