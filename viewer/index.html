@@ -6,8 +6,20 @@
   <meta name="theme-color" content="#dddddd" />
   <title>3JS Models Viewer</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; overscroll-behavior: none; }
+    html, body { margin: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; font-family: system-ui, sans-serif; overscroll-behavior: none; }
+    #view { position: relative; flex: 1; min-height: 0; overflow: hidden; }
     canvas { display: block; touch-action: none; }
+    #dock { display: none; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 8px 12px; background: #f3f3f3; border-top: 1px solid #bbb; }
+    #dock label, #modal label { display: flex; align-items: center; gap: 8px; }
+    #dock .ctl input[type=range] { width: 180px; }
+    #modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 10; }
+    #modal .box { background: #fff; border-radius: 8px; padding: 14px; width: min(520px, 94vw); max-height: 86vh; overflow: auto; box-sizing: border-box; }
+    #modal .box h3 { margin: 0 0 8px; }
+    #modal .row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #eee; }
+    #modal .row input[type=range] { width: 140px; }
+    #modal .row .name { font-weight: 600; }
+    #modal .row .pin { white-space: nowrap; font-size: 13px; }
+    #modal .actions { margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end; }
     #menu {
       position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left));
       background: rgba(255,255,255,.85); padding: 8px; border-radius: 6px;
@@ -16,6 +28,8 @@
     #menu select, #menu button, #menu input[type=search] { font-size: 16px; min-height: 36px; }
     #menu input[type=range] { width: 150px; vertical-align: middle; }
     @media (max-width: 600px) {
+      #dock .ctl input[type=range] { width: 130px; }
+      #modal .row { grid-template-columns: 1fr; }
       #menu { left: 10px; right: 10px; top: auto; bottom: max(10px, env(safe-area-inset-bottom)); }
       #menu select { width: 60%; }
       #menu input[type=search] { width: 35%; }
@@ -24,6 +38,7 @@
   </style>
 </head>
 <body>
+  <div id="view">
   <div id="menu">
     <input id="search" type="search" placeholder="Search models…" autocomplete="off" />
     <label>Model: <select id="select"></select></label>
@@ -33,7 +48,16 @@
       <span id="complexityValue">0</span></label>
     </div>
     <div style="margin-top:6px"><button id="reroll">Re-roll (new random seed)</button> <span id="seed"></span></div>
+    <div style="margin-top:6px"><button id="paramsButton" style="display:none">Tree parameters…</button></div>
   </div>
+  </div>
+  <div id="dock"></div>
+  <div id="modal"><div class="box">
+    <h3>Parameters</h3>
+    <p style="margin:0 0 6px;font-size:13px;color:#555">Tick “Show below” to put a control under the 3D view and tweak it while watching the model.</p>
+    <div id="modalRows"></div>
+    <div class="actions"><button id="randomize">Randomize</button><button id="modalClose">Close</button></div>
+  </div></div>
   <script type="module" src="./main.js"></script>
 </body>
 </html>

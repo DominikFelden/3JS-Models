@@ -2,20 +2,35 @@ import {
   SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
   Wall, Door, Window, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower, FlowerBud, LeafModel,
-  OvalLeaf, TriangleLeaf,
+  OvalLeaf, TriangleLeaf, LEAF_TYPES,
 } from './index.js';
+
+/** Tree controls shown in the viewer's parameter modal (`key` = model option). */
+const TREE_PARAMS = [
+  { key: 'trunkHeight', label: 'Trunk height', type: 'range', min: 0.5, max: 2, step: 0.05, value: 1 },
+  { key: 'trunkThickness', label: 'Trunk thickness', type: 'range', min: 0.5, max: 2, step: 0.05, value: 1 },
+  { key: 'leafSize', label: 'Leaf size', type: 'range', min: 0.5, max: 2.5, step: 0.05, value: 1 },
+  { key: 'trunkColor', label: 'Trunk colour', type: 'color', value: '#7a5230' },
+  { key: 'leafColor', label: 'Leaf colour', type: 'color', value: '#4a9a2a' },
+];
+const LEAF_TYPE_PARAM = {
+  key: 'leafType', label: 'Leaf type', type: 'select', value: 'oak',
+  options: Object.keys(LEAF_TYPES).map((k) => [k, k[0].toUpperCase() + k.slice(1)]),
+};
 
 /**
  * Models listed in the viewer menu (sorted alphabetically automatically). Add new models here.
  * `create(opts)` receives `{ complexity, seed }` from the viewer.
  * `complexity: { max, value }` makes the viewer show a complexity slider.
+ * `params` lists extra controls (range / select / color) for the viewer's parameter modal; their
+ * values are passed to `create` under their `key`.
  * (`seed` is undefined for a fresh random model, or a number to rebuild one.)
  */
 const unsorted = [
   { name: 'SimpleTree', create: () => new SimpleTree() },
-  { name: 'PineTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, create: (o) => new PineTree(o) },
-  { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, create: (o) => new OakTree(o) },
-  { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, create: (o) => new LeafTree(o) },
+  { name: 'PineTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new PineTree(o) },
+  { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new OakTree(o) },
+  { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, params: [LEAF_TYPE_PARAM, ...TREE_PARAMS], create: (o) => new LeafTree(o) },
   { name: 'Bush', create: (o) => new Bush(o) },
   { name: 'Rock', create: (o) => new Rock({ seed: o.seed }) },
   { name: 'House (cottage)', create: (o) => new House({ type: 'cottage', seed: o.seed }) },

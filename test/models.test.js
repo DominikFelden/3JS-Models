@@ -282,12 +282,12 @@ test('Seeds change models substantially: tree height, castle layout, house walls
   assert.ok(walls.size > 8, 'wall colours vary');
 });
 
-import { LeafTree, OvalLeaf, TriangleLeaf } from '../src/index.js';
+import { LeafTree, LEAF_TYPES } from '../src/index.js';
 
 test('LeafTree builds leaves that hang and face up/outward', () => {
   const t = new LeafTree({ seed: 3 });
   assert.ok(t.leaves.length > 100);
-  assert.ok(t.leafClass === OvalLeaf || t.leafClass === TriangleLeaf);
+  assert.ok(Object.values(LEAF_TYPES).includes(t.leafClass));
   assert.strictEqual(t.getColliderTags()[1], 'crown');
   t.leaves.forEach((l) => {
     assert.ok(l.direction.y < 0);
@@ -309,4 +309,26 @@ test('registry is sorted alphabetically and every model builds with a collider a
     const { min, max } = model.getBounds();
     assert.ok([...min, ...max].every(Number.isFinite), m.name);
   }
+});
+
+test('Tree options: trunk size, leaf size, leaf type, colours and complexity 20', async () => {
+  assert.strictEqual(MAX_TREE_COMPLEXITY, 20);
+  assert.ok(Object.keys(LEAF_TYPES).length >= 5);
+  for (const Tree of [PineTree, OakTree, LeafTree]) {
+    const base = new Tree({ seed: 9, complexity: 2 }).getBounds().max[1];
+    const tall = new Tree({ seed: 9, complexity: 2, trunkHeight: 2 }).getBounds().max[1];
+    assert.ok(tall > base, `${Tree.name} trunkHeight`);
+    const thick = new Tree({ seed: 9, complexity: 2, trunkThickness: 2 }).getColliders()[0];
+    assert.ok(thick.radius > new Tree({ seed: 9, complexity: 2 }).getColliders()[0].radius * 1.5, `${Tree.name} thickness`);
+    const t = new Tree({ complexity: 20 });
+    assert.strictEqual(t.complexity, 20);
+    assert.ok(t.getColliders().length > 100);
+  }
+  const a = new LeafTree({ seed: 4, leafType: 'maple', leafColor: '#ff0000', trunkColor: 0x112233, leafSize: 2 });
+  assert.strictEqual(a.leafClass, LEAF_TYPES.maple);
+  for (const [k, Kind] of Object.entries(LEAF_TYPES)) {
+    const g = Kind.geometry();
+    assert.ok(g.attributes.position.count >= 3, k);
+  }
+  assert.ok(new LeafTree({ seed: 4, leafSize: 2 }).leaves[0].length > new LeafTree({ seed: 4 }).leaves[0].length * 1.5);
 });
