@@ -211,6 +211,6 @@ export class AshLeaf extends Leaf {
 
 /** Leaf types selectable by name (e.g. in the viewer drop-down). */
 export const LEAF_TYPES = {
-  oval: OvalLeaf, triangle: TriangleLeaf, oak: OakLeaf, maple: MapleLeaf, birch: BirchLeaf,
+  oak: OakLeaf, maple: MapleLeaf, birch: BirchLeaf,
   willow: WillowLeaf, ginkgo: GinkgoLeaf, clover: CloverLeaf, ash: AshLeaf,
 };
