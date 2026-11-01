@@ -322,7 +322,8 @@ test('Tree options: trunk size, leaf size, leaf type, colours and complexity 20'
     assert.ok(thick.radius > new Tree({ seed: 9, complexity: 2 }).getColliders()[0].radius * 1.5, `${Tree.name} thickness`);
     const t = new Tree({ complexity: 20 });
     assert.strictEqual(t.complexity, 20);
-    assert.ok(t.getColliders().length > 100);
+    const colliders = t.getColliders().length;
+    assert.ok(colliders > 10 && colliders < 400, `${Tree.name} colliders capped to first generations`);
   }
   const a = new LeafTree({ seed: 4, leafType: 'maple', leafColor: '#ff0000', trunkColor: 0x112233, leafSize: 2 });
   assert.strictEqual(a.leafClass, LEAF_TYPES.maple);

@@ -27,7 +27,7 @@ scene.add(new SimpleTree());
 
 Tree style options (all trees, optional, otherwise seed-driven): `trunkHeight`, `trunkThickness`, `leafSize` (factors, 1 = default) and `trunkColor`, `leafColor` (any three.js colour). `leafType` (key of `LEAF_TYPES`) is for `LeafTree`. Above complexity 5 branching generations grow slowly (20 = 8 generations); extra complexity adds more limbs and foliage.
 
-\* The branch colliders are only present when `complexity > 0`.
+\* Branch colliders are only present when `complexity > 0` and only cover the first 3 branch generations (finer twigs are visual only).
 
 All models are built only from ThreeJS primitives with flat-shaded colours (no textures), low segment counts, and shared geometries/materials (cached per model type, or per seed for rocks). Creating 1000 trees therefore costs 1000 small `Mesh` objects but no extra GPU buffers. For very large forests consider `InstancedMesh` in your game.
 
