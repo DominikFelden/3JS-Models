@@ -274,12 +274,12 @@ test('Seeds change models substantially: tree height, castle layout, house walls
     const cb = new Castle({ seed, complexity: 3 }).getBounds();
     layouts.add(`${cb.min[0].toFixed(0)}:${cb.max[1].toFixed(0)}`);
     const h = new House({ seed, type: 'towerhouse' });
-    walls.add(h.children[0].material.color.getHex());
+    walls.add(h.children[0].material);
     balconies.add(h.children.length);
   }
   assert.ok(heights.size > 20, 'tree heights vary');
   assert.ok(layouts.size > 8, 'castle layouts vary');
-  assert.ok(walls.size > 8, 'wall colours vary');
+  assert.ok(walls.size > 8, 'wall textures vary');
 });
 
 import { LeafTree, LEAF_TYPES } from '../src/index.js';

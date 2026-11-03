@@ -1,13 +1,18 @@
 import { BoxGeometry, CylinderGeometry, ConeGeometry, SphereGeometry, ExtrudeGeometry, Shape, Vector2 } from 'three';
 import { Vector3 } from 'three';
-import { OvalLeaf, leafMaterial } from './Leaf.js';
-import { WorldModel, MergeBuilder, shared, material, surfaceMaterial, stoneMaterial } from '../WorldModel.js';
+import { OvalLeaf } from './Leaf.js';
+import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
 
 /**
  * Small building / plant parts. Each is a standalone WorldModel (so it can be
  * inspected in the viewer) that sits on y = 0, centred on x/z, and can also be
  * used as a building block of bigger models. All options are optional.
+ * Stone, brick, plaster, planks and shingles wear pooled hand-drawn textures that
+ * the seed picks (`textures: {kind: 0..4}` pins one).
  */
+
+/** Texture kinds a `Wall` can be made of. */
+const WALL_SURFACES = ['stone', 'brick', 'cobble', 'plaster', 'planks', 'mossy'];
 
 const box = () => shared('part:box', () => new BoxGeometry(1, 1, 1));
 const cyl = () => shared('part:cyl', () => new CylinderGeometry(1, 1, 1, 12));
@@ -21,14 +26,14 @@ const prism = () => shared('part:prism', () => {
   return g;
 });
 
-/** Straight stone/brick/plaster wall segment with a coping stone on top. */
+/** Straight stone/brick/plaster wall segment with a coping stone on top. `surface`: stone, brick, cobble, plaster, planks or mossy. */
 export class Wall extends WorldModel {
   constructor({ width = 4, height = 2.5, depth = 0.4, surface = 'stone', ...o } = {}) {
     super('Wall', o);
     const b = new MergeBuilder();
-    const m = surfaceMaterial(surface, surface === 'brick' ? 0xb0654a : 0xb4b0a6);
-    b.add(box(), m, { position: [0, height / 2, 0], scale: [width, height, depth], uv: 'box', tint: this.rand(0.92, 1.05) });
-    b.add(box(), stoneMaterial(0x8f8b83), { position: [0, height + 0.05, 0], scale: [width + 0.1, 0.1, depth + 0.1] });
+    const m = this.surface(WALL_SURFACES.includes(surface) ? surface : 'stone');
+    b.add(box(), m, { position: [0, height / 2, 0], scale: [width, height, depth], tint: this.rand(0.92, 1.05) });
+    b.add(box(), this.surface('stone'), { position: [0, height + 0.05, 0], scale: [width + 0.1, 0.1, depth + 0.1] });
     b.build(this);
     this.addShape('box', { size: [width, height, depth] }, [0, height / 2, 0], null, 'wall');
   }
@@ -40,7 +45,7 @@ export class Door extends WorldModel {
     super('Door', o);
     const b = new MergeBuilder();
     const w = width + 1.2, h = height + 0.7;
-    b.add(box(), surfaceMaterial('plaster', 0xd8cfbd), { position: [0, h / 2, 0], scale: [w, h, 0.3], uv: 'box' });
+    b.add(box(), this.surface('plaster'), { position: [0, h / 2, 0], scale: [w, h, 0.3] });
     this.addDoor(b, [0, 0, 0.15], 0, width, height, { arched });
     b.build(this);
     this.addShape('box', { size: [w, h, 0.3] }, [0, h / 2, 0], null, 'wall');
@@ -53,7 +58,7 @@ export class Window extends WorldModel {
     super('Window', o);
     const b = new MergeBuilder();
     const w = width + 1.2, h = height + 1.2;
-    b.add(box(), surfaceMaterial('plaster', 0xd8cfbd), { position: [0, h / 2, 0], scale: [w, h, 0.3], uv: 'box' });
+    b.add(box(), this.surface('plaster'), { position: [0, h / 2, 0], scale: [w, h, 0.3] });
     this.addWindow(b, [0, h / 2, 0.15], 0, width, height, { arched, shutters: shutters ? 0x4f6b4a : null });
     b.build(this);
     this.addShape('box', { size: [w, h, 0.3] }, [0, h / 2, 0], null, 'wall');
@@ -65,10 +70,10 @@ export class Column extends WorldModel {
   constructor({ height = 3, radius = 0.3, ...o } = {}) {
     super('Column', o);
     const b = new MergeBuilder();
-    const stone = stoneMaterial(0xcfc9bb, 'plaster');
+    const stone = this.surface('plaster');
     b.add(box(), stone, { position: [0, 0.1, 0], scale: [radius * 3, 0.2, radius * 3] });
-    b.add(cyl(), stone, { position: [0, 0.2 + (height - 0.5) / 2, 0], scale: [radius, height - 0.5, radius] });
-    b.add(cyl(), stone, { position: [0, 0.25, 0], scale: [radius * 1.3, 0.1, radius * 1.3] });
+    b.add(cyl(), stone, { position: [0, 0.2 + (height - 0.5) / 2, 0], scale: [radius, height - 0.5, radius], uv: 'cyl' });
+    b.add(cyl(), stone, { position: [0, 0.25, 0], scale: [radius * 1.3, 0.1, radius * 1.3], uv: 'cyl' });
     b.add(box(), stone, { position: [0, height - 0.15, 0], scale: [radius * 3, 0.3, radius * 3] });
     b.build(this);
     this.addShape('cylinder', { radius, height }, [0, height / 2, 0], null, 'column');
@@ -80,14 +85,14 @@ export class Roof extends WorldModel {
   constructor({ type = 'gable', width = 5, depth = 4, height = 1.8, ...o } = {}) {
     super('Roof', o);
     const b = new MergeBuilder();
-    const tiles = surfaceMaterial('shingle', 0x8a3f2c);
+    const tiles = this.surface('shingle');
     if (type === 'hip') {
       const g = shared('part:pyramid', () => { const c = new ConeGeometry(0.7071, 1, 4); c.rotateY(Math.PI / 4); return c; });
       b.add(g, tiles, { position: [0, height / 2, 0], scale: [width * 1.1, height, depth * 1.1] });
     } else if (type === 'flat') {
       b.add(box(), tiles, { position: [0, 0.15, 0], scale: [width, 0.3, depth] });
       for (const [sx, sz, w, d] of [[0, 1, width, 0.15], [0, -1, width, 0.15], [1, 0, 0.15, depth], [-1, 0, 0.15, depth]]) {
-        b.add(box(), stoneMaterial(0x8f8b83), { position: [sx * width / 2, 0.45, sz * depth / 2], scale: [w, 0.3, d] });
+        b.add(box(), this.surface('stone'), { position: [sx * width / 2, 0.45, sz * depth / 2], scale: [w, 0.3, d] });
       }
     } else {
       b.add(prism(), tiles, { position: [0, 0, 0], scale: [width * 1.1, height, depth * 1.1] });
@@ -102,8 +107,8 @@ export class Chimney extends WorldModel {
   constructor({ height = 2.2, width = 0.7, ...o } = {}) {
     super('Chimney', o);
     const b = new MergeBuilder();
-    b.add(box(), surfaceMaterial('brick', 0xa85a43), { position: [0, height / 2, 0], scale: [width, height, width], uv: 'box' });
-    const stone = stoneMaterial(0x8f8b83);
+    b.add(box(), this.surface('brick'), { position: [0, height / 2, 0], scale: [width, height, width] });
+    const stone = this.surface('stone');
     b.add(box(), stone, { position: [0, height + 0.06, 0], scale: [width + 0.2, 0.12, width + 0.2] });
     b.add(box(), material(0x1c1a19, true), { position: [0, height + 0.125, 0], scale: [width * 0.55, 0.02, width * 0.55] });
     b.build(this);
@@ -116,7 +121,7 @@ export class Stairs extends WorldModel {
   constructor({ steps = 7, width = 1.4, rise = 0.2, run = 0.35, ...o } = {}) {
     super('Stairs', o);
     const b = new MergeBuilder();
-    const stone = stoneMaterial(0xaaa598);
+    const stone = this.surface('stone');
     for (let i = 0; i < steps; i++) {
       const h = rise * (i + 1);
       b.add(box(), stone, { position: [0, h / 2, -i * run], scale: [width, h, run], tint: this.rand(0.93, 1.05) });
@@ -131,7 +136,7 @@ export class Railing extends WorldModel {
   constructor({ length = 3, height = 1, ...o } = {}) {
     super('Railing', o);
     const b = new MergeBuilder();
-    const wood = material(0x6b4a2e, true, true);
+    const wood = this.surface('planks');
     for (const x of [-length / 2, length / 2]) b.add(box(), wood, { position: [x, height / 2, 0], scale: [0.12, height, 0.12] });
     b.add(box(), wood, { position: [0, height, 0], scale: [length + 0.12, 0.08, 0.14] });
     b.add(box(), wood, { position: [0, 0.12, 0], scale: [length, 0.06, 0.08] });
@@ -149,13 +154,13 @@ export class Balcony extends WorldModel {
   constructor({ width = 2.4, depth = 1.2, height = 2, ...o } = {}) {
     super('Balcony', o);
     const b = new MergeBuilder();
-    const stone = stoneMaterial(0xaaa598);
-    const wood = material(0x6b4a2e, true, true);
+    const stone = this.surface('stone');
+    const wood = this.surface('planks');
     b.add(box(), stone, { position: [0, height, depth / 2], scale: [width, 0.15, depth] });
     for (const x of [-width * 0.35, width * 0.35]) {
       b.add(box(), stone, { position: [x, height - 0.3, depth * 0.35], scale: [0.2, 0.45, depth * 0.7] });
     }
-    b.add(box(), surfaceMaterial('plaster', 0xd8cfbd), { position: [0, height / 2 + 0.6, -0.1], scale: [width + 0.6, height + 1.2, 0.2], uv: 'box' });
+    b.add(box(), this.surface('plaster'), { position: [0, height / 2 + 0.6, -0.1], scale: [width + 0.6, height + 1.2, 0.2] });
     const rail = (x, z, len, yaw) => {
       const h = 0.95, base = height + 0.075;
       b.add(box(), wood, { position: [x, base + h, z], scale: [len, 0.07, 0.1], yaw });
@@ -261,7 +266,7 @@ export class LeafModel extends WorldModel {
     super('Leaf', o);
     const b = new MergeBuilder();
     b.add(cyl(), material(0x6e5233, true), { position: [0, 0.3, -0.15], scale: [0.015, 0.6, 0.015] });
-    new LeafClass(new Vector3(0, 0.6, 0), new Vector3(0, 0, 1), { length, width, droop: 0.5, tint: this.rand(0.9, 1.1) }).place(b, leafMaterial());
+    new LeafClass(new Vector3(0, 0.6, 0), new Vector3(0, 0, 1), { length, width, droop: 0.5, tint: this.rand(0.9, 1.1) }).place(b, this.surface('leaf'));
     b.build(this);
     this.addShape('sphere', { radius: length / 2 }, [0, 0.55, length / 2], null, 'leaf');
   }

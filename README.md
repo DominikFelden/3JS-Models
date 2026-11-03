@@ -9,12 +9,12 @@ git submodule add https://github.com/DominikFelden/3JS-Models.git libs/3JS-Model
 import { SimpleTree } from './libs/3JS-Models/src/index.js';
 scene.add(new SimpleTree());
 ```
-`three` is a peer dependency: the host project provides it. Geometries and materials are created once and shared by all instances.
+`three` (>= 0.170) and [`lamina`](https://www.npmjs.com/package/lamina) are peer dependencies: the host project provides them (`npm install three lamina`). Geometries, materials and textures are created once and shared by all instances.
 
 ## Models
 | Class | Options besides position/rotation/size | Description | Collider tags (in order) |
 |---|---|---|---|
-| `SimpleTree` | – | Trunk + sphere (legacy, plain `Group`, no collider API) | – |
+| `SimpleTree` | – | Trunk + sphere (legacy, plain `Group`, no collider API); always wears the first bark and foliage textures | – |
 | `PineTree` | `complexity` 0-20, `seed`, tree style options | Trunk + 3 cones; with complexity: whorls of branches and sub-branches with needle tufts | `trunk`, `crown`, then `branch`* |
 | `OakTree` | `complexity` 0-20, `seed`, tree style options | Thick trunk + 3 spheres; with complexity: spreading limbs, sub-branches, leaf blobs on tips | `trunk`, `crown`, then `branch`* |
 | `LeafTree` | `complexity` 0-20 (default 4), `seed`, `leafType`, tree style options | Trunk, limbs forking into branches and twigs, ending in hanging flat `Leaf` objects: oak (several ovals), maple (several triangles), birch, willow, ginkgo, clover, ash (see `LEAF_TYPES`) | `trunk`, `crown`, then `branch`* |
@@ -25,11 +25,11 @@ scene.add(new SimpleTree());
 | `Wall`, `Door`, `Window`, `Column`, `Roof` (`type`: gable/hip/flat), `Chimney`, `Stairs`, `Railing`, `Balcony` | size options, `seed` | Building parts, each a standalone model usable as a building block | one shape each |
 | `Grass`, `BirdsNest`, `Flower`, `FlowerBud`, `LeafModel` | `seed` | Plant parts (`LeafModel` shows an `OvalLeaf`/`TriangleLeaf`) | one shape each |
 
-Tree style options (all trees, optional, otherwise seed-driven): `trunkHeight`, `trunkThickness`, `leafSize` (factors, 1 = default) and `trunkColor`, `leafColor` (any three.js colour). `leafType` (key of `LEAF_TYPES`) is for `LeafTree`. Above complexity 5 branching generations grow slowly (20 = 8 generations); extra complexity adds more limbs and foliage.
+Tree style options (all trees, optional, otherwise seed-driven): `trunkHeight`, `trunkThickness`, `leafSize` (factors, 1 = default) and `trunkColor`, `leafColor` (any three.js colour; they recolour the bark / foliage texture, leave them out to keep the colours of the picked texture). `leafType` (key of `LEAF_TYPES`) is for `LeafTree`. Above complexity 5 branching generations grow slowly (20 = 8 generations); extra complexity adds more limbs and foliage.
 
 \* Branch colliders are only present when `complexity > 0` and only cover the first 3 branch generations (finer twigs are visual only).
 
-All models are built only from ThreeJS primitives with flat-shaded colours (no textures), low segment counts, and shared geometries/materials (cached per model type, or per seed for rocks). Creating 1000 trees therefore costs 1000 small `Mesh` objects but no extra GPU buffers. For very large forests consider `InstancedMesh` in your game.
+All models are built only from ThreeJS primitives with low segment counts and shared geometries/materials (cached per model type, or per seed for rocks). Their surfaces wear a small pool of shared, hand-drawn textures (see [Textures](#textures)). Creating 1000 trees therefore costs 1000 small `Mesh` objects but no extra GPU buffers and no extra textures. For very large forests consider `InstancedMesh` in your game.
 
 ## Complexity, randomness and seeds
 Trees and castles take a `complexity` option (integer, clamped to the model's range; invalid values fall back to the default):
@@ -82,7 +82,49 @@ new House({ type: 'towerhouse' }); // 2.4 x 2.4, 5 high, pyramid roof, two windo
 Proportions, wall and roof colours and window layout vary per instance. The door is on the `+Z` side. Colliders: `body` (box) and `roof` (convex hull). The door is not a gap in the collider.
 
 ### Cleaning up
-Trees, houses and castles own merged geometries (shared unit geometries are never freed). Call `model.dispose()` when you permanently remove one, e.g. when the viewer rebuilds a model. Not calling it only leaks memory; it never breaks rendering.
+Trees, houses and castles own merged geometries (shared unit geometries are never freed). Call `model.dispose()` when you permanently remove one, e.g. when the viewer rebuilds a model. Not calling it only leaks memory; it never breaks rendering. Textures and their materials are shared by all models and are not freed by `dispose()`; call `disposeTextures()` when a whole world is discarded.
+
+## Textures
+Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 12 kinds with 5 variants each, every one a seamless 256 × 256 picture with ink outlines, hatching, a watercolour wash and paper grain. The pool needs about 21 MB of GPU memory however many models you create, and all models wearing a variant share one material.
+
+| Kind | Painted on | The 5 variants |
+|---|---|---|
+| `bark` | tree trunks and branches | brown, grey, red-brown, white birch (never on pines), tan |
+| `foliage` | oak crowns, bushes, `SimpleTree` | light green, dark green, olive, autumn orange (rarer), teal (rarer) |
+| `needles` | pine needles | five conifer greens (one rarer) |
+| `leaf` | `LeafTree` leaves and leaf models (one picture per leaf, not tiled) | like `foliage` |
+| `rock` | rocks | grey, sandstone, slate, charcoal, greenish |
+| `brick`, `stone`, `cobble`, `mossy`, `plaster`, `planks` | walls of houses, castles and wall parts; `planks` also railings and balconies | five colourways each |
+| `shingle` | roofs | red, slate blue, brown, green, terracotta |
+
+**Random pick.** A model picks one variant per kind from its `seed` (same seed, same textures) and wears it on all its parts, so one tree has one kind of bark. The pick uses its own random stream, so it never changes a model's shape: every seed builds the same shapes as before textures existed. Pin variants with the `textures` option (unknown kinds and invalid numbers are ignored):
+```js
+new OakTree({ seed: 3 });                                  // bark and foliage picked from the pool
+new OakTree({ seed: 3, textures: { bark: 3 } });           // the same tree with white birch bark
+new House({ type: 'cottage', textures: { shingle: 1 } }); // slate roof, the rest picked
+oak.textureVariants();                                     // { bark: 3, foliage: 0 }
+```
+**Colours.** Without a colour option a model keeps the colours its variant was painted in. `trunkColor` / `leafColor` (trees) recolour the texture so its average matches yours; the drawing stays.
+
+**Efficient by design.** The textures are made once, not per model: each kind is a [lamina](https://github.com/pmndrs/lamina) layer stack (a drawing layer, a seamless noise wash and paper grain) that is rendered into a texture per variant the first time a kind is needed, a few hundred milliseconds per kind even on a software renderer. Every model reuses those textures: its UVs are scaled when the geometry is merged, so a texture keeps the same size in the world whatever the size of the part, and there is still **one mesh and draw call per material**. To avoid a hiccup in the middle of a game, bake the pool while loading, ideally with the renderer you already have:
+```js
+import { preloadTextures } from './libs/3JS-Models/src/index.js';
+await preloadTextures({ renderer, onProgress: (p, kind) => { bar.value = p; } }); // one kind per tick
+```
+**Without WebGL** (Node, tests) nothing can be baked: models get plain colours (the average colour of their variant) and no UVs, shapes, colliders and seeds are unchanged, and `preloadTextures` resolves to `false`.
+
+The pool is also available for your own meshes (all exported from `src/index.js`):
+
+| Export | |
+|---|---|
+| `TEXTURE_KINDS`, `TEXTURE_VARIANTS` | the 12 kind names and the number of variants (5) |
+| `pickVariant(kind, random?, allowed?)` | a variant number, weighted (autumn and teal foliage are rarer). Pass a seeded random function for a reproducible pick; `allowed` limits the choice to some variants |
+| `getTexture(kind, variant)` | the shared `Texture` (`null` without WebGL) |
+| `pooledMaterial(kind, variant, { color, flatShading, vertexColors, roughness })` | the shared `MeshStandardMaterial` wearing it; the same arguments always return the same instance |
+| `preloadTextures({ kinds, renderer, onProgress })` | bake now (async), see above |
+| `disposeTextures()` | free all pooled textures and materials |
+
+To change the look, edit the palettes (`RECIPES`) and how a kind is laid on geometry (`MAPPING`) in `src/textures/recipes.js`; the drawing code of each kind is in `src/textures/kinds.js`.
 
 ## Placing models: position, size, rotation
 All models extend `WorldModel` (a `THREE.Group`) and take the same options:
@@ -123,9 +165,9 @@ Foliage shapes are bounding shapes of the crown; whether to collide with them is
 
 ## Adding a model
 1. Subclass `WorldModel` in `src/models/`, call `super(name, options)`.
-2. Create geometry via `shared(key, factory)` and materials via `material(color, flat)` so they are reused.
+2. Create geometry via `shared(key, factory)` and materials via `material(color, flat)` so they are reused. For textured surfaces use `this.surface(kind)` (e.g. `this.surface('bark')`): it returns the shared material of the texture variant this model picked for that kind (see [Textures](#textures)); pass `uv` to `MergeBuilder.add` if the default mapping of the kind does not fit a part.
 3. Add meshes with `addMesh()` (few, shared parts) or collect many parts in a `MergeBuilder` and call `builder.build(this)` (one mesh per material; use this for anything with dozens of parts). Add matching collision shapes with `addShape(type, data, position, rotation, tag)` (local space; `WorldModel` applies position/rotation/size).
-3b. Use `this.random()` / `this.rand(min, max)` for all randomness (never `Math.random()`), so `seed` makes the model reproducible; use `this.addWindow()` for windows.
+3b. Use `this.random()` / `this.rand(min, max)` for all randomness (never `Math.random()`), so `seed` makes the model reproducible; use `this.addWindow()` for windows. Texture picks come from a separate stream (`this.surface()` / `this.variant(kind)`), so choosing a texture never shifts the random numbers that shape the model.
 4. Export it from `src/index.js`, register it in `src/registry.js`, add a test.
 
 ## Viewer
@@ -133,7 +175,7 @@ Foliage shapes are bounding shapes of the crown; whether to collide with them is
 npm install
 npm run dev
 ```
-Open the printed URL and pick a model in the menu. For models that support it a **Complexity slider** appears (trees: up to 20) and trees get a **Tree parameters…** modal with trunk height/thickness, leaf size, leaf type (Leaf-Tree) and trunk/leaf colour pickers; tick *Show below* to pin a control under the 3D view. Re-roll randomizes all of them. Sliders keep the current seed; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. New models are registered in `src/registry.js`.
+Open the printed URL and pick a model in the menu. While the shared textures are painted at start-up a progress overlay is shown. For models that support it a **Complexity slider** appears (trees: up to 20) and models with parameters or textures get a **Parameters…** modal: trunk height/thickness, leaf size, leaf type (Leaf-Tree) and trunk/leaf colour pickers (*auto* keeps the colours of the picked texture), and a **Textures** section that lists the variants of every kind the model uses; click a thumbnail to pin it to this model, click it again to return to the random pick. Tick *Show below* to pin a control under the 3D view. Re-roll randomizes all of them (and unpins the textures). Sliders keep the current seed; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. New models are registered in `src/registry.js`.
 
 ## Tests
 `npm test`
@@ -141,8 +183,8 @@ Open the printed URL and pick a model in the menu. For models that support it a 
 ## Realism tricks
 
 - **Denser foliage:** oaks get a cluster of overlapping blobs on every branch tip and fork, pines stacked needle skirts; bushes are 8 blobs (sometimes with berries).
-- **Vertex colours:** every part gets its own random tint (leaves lighter at the top, stone per block), baked into the merged mesh, so there is no extra draw call. `MergeBuilder.add` accepts `tint`, `grime` (darker, mossy near the ground) and `uv`.
-- **Masonry texture:** castle stone uses a procedural canvas texture (browser only; plain colour under Node).
+- **Vertex colours:** every part gets its own random tint (leaves lighter at the top, stone per block), baked into the merged mesh, so there is no extra draw call. `MergeBuilder.add` accepts `tint`, `grime` (darker, mossy near the ground), `uv` (how a texture is laid on the part) and `detail` (pattern density, for small parts).
+- **Hand-drawn textures:** all stone, brick, plaster, wood, bark, foliage and roof surfaces use the shared texture pool (see [Textures](#textures)); under Node they are plain colours.
 - **Details:** merlons, plinths, string courses, chimneys, timber framing, stone foundations, root flares, roof ridge caps, flags.
 - **Viewer:** soft shadows, hemisphere sky light, fog, tone mapping and a grass ground. All models cast/receive shadows.
 

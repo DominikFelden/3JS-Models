@@ -20,6 +20,16 @@
     #modal .row .name { font-weight: 600; }
     #modal .row .pin { white-space: nowrap; font-size: 13px; }
     #modal .actions { margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end; }
+    #modal .box h3 + p, #modal .hint { margin: 0 0 6px; font-size: 13px; color: #555; }
+    #textureRows .texrow { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #eee; }
+    #textureRows .name { width: 64px; flex: none; font-weight: 600; }
+    #textureRows .thumb { flex: 0 1 52px; min-width: 0; aspect-ratio: 1; box-sizing: border-box; border: 3px solid transparent; border-radius: 4px; background: #ddd; cursor: pointer; }
+    #textureRows .thumb.worn { border-color: #777; }
+    #textureRows .thumb.pinned { border-color: #2a7de1; }
+    #loading {
+      position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+      background: #bfd9ee; color: #345; font-size: 20px; letter-spacing: .02em;
+    }
     #menu {
       position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left));
       background: rgba(255,255,255,.85); padding: 8px; border-radius: 6px;
@@ -48,14 +58,20 @@
       <span id="complexityValue">0</span></label>
     </div>
     <div style="margin-top:6px"><button id="reroll">Re-roll (new random seed)</button> <span id="seed"></span></div>
-    <div style="margin-top:6px"><button id="paramsButton" style="display:none">Tree parameters…</button></div>
+    <div style="margin-top:6px"><button id="paramsButton" style="display:none">Parameters…</button></div>
   </div>
+  <div id="loading">Painting textures… <span id="loadingPercent">0%</span></div>
   </div>
   <div id="dock"></div>
   <div id="modal"><div class="box">
     <h3>Parameters</h3>
-    <p style="margin:0 0 6px;font-size:13px;color:#555">Tick “Show below” to put a control under the 3D view and tweak it while watching the model.</p>
+    <p id="paramsHint">Tick “Show below” to put a control under the 3D view and tweak it while watching the model. Colours set to “auto” use the colours of the picked texture.</p>
     <div id="modalRows"></div>
+    <div id="texturesSection" style="display:none">
+      <h3 style="margin-top:12px">Textures</h3>
+      <p>All models share a small pool of hand-drawn textures. Click one to use it for this model, click it again to go back to the random pick (grey frame).</p>
+      <div id="textureRows"></div>
+    </div>
     <div class="actions"><button id="randomize">Randomize</button><button id="modalClose">Close</button></div>
   </div></div>
   <script type="module" src="./main.js"></script>

@@ -1,7 +1,9 @@
 import { CylinderGeometry, SphereGeometry, ConeGeometry, Vector3 } from 'three';
-import { WorldModel, MergeBuilder, shared, material, barkMaterial } from '../WorldModel.js';
-import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY, randomTrunkColor, randomLeafColor } from './branching.js';
+import { WorldModel, MergeBuilder, shared } from '../WorldModel.js';
+import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.js';
 
+/** Bark variants that suit a conifer: brown, grey, red-brown and tan (variant 3 is white birch). */
+const PINE_BARK = [0, 1, 2, 4];
 
 /** Bounding sphere {centre, radius} around points, for a single crown collider. */
 function boundingSphere(points, extra) {
@@ -32,9 +34,11 @@ function addCrownAfterTrunk(model, tips, extra) {
  *   forking into sub-branches `complexity` times. Branch tips carry small
  *   cone needles. Every instance is different (random `seed` by default).
  *
- * The seed changes height (about 0.7x to 1.6x), width, foliage and bark colour.
- * Options override parts of that: trunkHeight, trunkThickness, leafSize (factors, 1 = default),
- * trunkColor, leafColor (any three.js colour). complexity goes up to 20.
+ * The seed changes height (about 0.7x to 1.6x), width and foliage, and picks the
+ * bark and needle textures from the shared pool (`textures: {bark, needles}`
+ * pins one of the 5 variants). Options override parts of that: trunkHeight,
+ * trunkThickness, leafSize (factors, 1 = default), trunkColor, leafColor (any
+ * three.js colour; recolours the picked texture). complexity goes up to 20.
  *
  * Colliders: [trunk cylinder, crown cone or sphere, ...branch cylinders].
  * Tags: 'trunk', 'crown', 'branch'.
@@ -46,22 +50,22 @@ export class PineTree extends WorldModel {
     const trunkG = shared('pine:trunk', () => new CylinderGeometry(0.15, 0.22, 1.2, 6));
     const coneG = shared('pine:cone', () => new ConeGeometry(1, 1.6, 8));
     const st = treeStyle(options);
-    const randomGreen = randomLeafColor(this.random), randomBark = randomTrunkColor(this.random);
-    const green = material(st.leafColor ?? randomGreen, true, true);
-    const bark = barkMaterial(st.trunkColor ?? randomBark);
+    this.skip(3); // the random leaf and bark colours of earlier versions
+    const green = this.surface('needles', st.leafColor);
+    const bark = this.surface('bark', st.trunkColor, false, PINE_BARK);
     this.hf = this.rand(0.7, 1.6); // height factor
     this.wf = this.rand(0.8, 1.25); // width factor
     const th = st.trunkHeight ?? 1, tw = st.trunkThickness ?? 1;
     this.ls = st.leafSize ?? 1;     // needle size factor
     this.lift = 1.2 * (th - 1);     // the crown sits on top of the (taller or shorter) trunk
 
-    this.addMesh(trunkG, bark, [0, 0.6 * th, 0], [tw, th, tw]);
-    this.addMesh(shared('pine:flare', () => new CylinderGeometry(0.2, 0.34, 0.3, 6)), bark, [0, 0.15, 0], [tw, 1, tw]); // root flare
+    const b = new MergeBuilder();
+    b.add(trunkG, bark, { position: [0, 0.6 * th, 0], scale: [tw, th, tw] });
+    b.add(shared('pine:flare', () => new CylinderGeometry(0.2, 0.34, 0.3, 6)), bark, { position: [0, 0.15, 0], scale: [tw, 1, tw] }); // root flare
     this.addShape('cylinder', { radius: 0.22 * tw, height: 1.2 * th }, [0, 0.6 * th, 0], null, 'trunk');
 
     if (this.complexity === 0) {
       // Overlapping skirts (4 to 9 depending on height), each smaller than the one below.
-      const b = new MergeBuilder();
       const n = Math.max(4, Math.round(6 * this.hf));
       let top = 0;
       for (let i = 0; i < n; i++) {
@@ -76,13 +80,12 @@ export class PineTree extends WorldModel {
       return;
     }
 
-    this._buildBranched(coneG, bark, green);
+    this._buildBranched(b, bark, green);
   }
 
-  _buildBranched(coneG, bark, green) {
+  _buildBranched(builder, bark, green) {
     const rnd = this.random;
     const c = this.complexity;
-    const builder = new MergeBuilder();
     const tips = [];
     const joints = [];
     // Central leader reaches the top of the tree.
@@ -140,10 +143,12 @@ export class PineTree extends WorldModel {
  * complexity 1..5: trunk splits into spreading branches which fork into
  *   sub-branches `complexity` times; leaf blobs sit on the branch tips.
  *
- * The seed changes trunk height and thickness, crown size, leaf colour
- * (green, yellow-green, autumn) and bark colour. Options trunkHeight,
- * trunkThickness, leafSize (factors, 1 = seed default), trunkColor and
- * leafColor override them. complexity goes up to 20.
+ * The seed changes trunk height and thickness and crown size, and picks the
+ * bark and foliage textures (green, olive, autumn...) from the shared pool
+ * (`textures: {bark, foliage}` pins one of the 5 variants). Options
+ * trunkHeight, trunkThickness, leafSize (factors, 1 = seed default),
+ * trunkColor and leafColor override them (the colours recolour the picked
+ * texture). complexity goes up to 20.
  *
  * Colliders: [trunk cylinder, crown sphere, ...branch cylinders].
  * Tags: 'trunk', 'crown', 'branch'. The crown sphere bounds all leaves.
@@ -156,21 +161,21 @@ export class OakTree extends WorldModel {
     const crownG = shared('oak:crown', () => new SphereGeometry(1, 8, 6));
     const blobG = shared('oak:blob', () => new SphereGeometry(1, 7, 5)); // cheap leaf blob
     const st = treeStyle(options);
-    const randomLeaf = randomLeafColor(this.random), randomBark = randomTrunkColor(this.random);
-    const leaf = material(st.leafColor ?? randomLeaf, true, true);
-    const bark = barkMaterial(st.trunkColor ?? randomBark);
+    this.skip(3); // the random leaf and bark colours of earlier versions
+    const leaf = this.surface('foliage', st.leafColor);
+    const bark = this.surface('bark', st.trunkColor, false);
     const th = this.th = this.rand(0.6, 1.6) * (st.trunkHeight ?? 1);   // trunk height factor
     const tw = this.tw = this.rand(0.75, 1.35) * (st.trunkThickness ?? 1);           // trunk thickness factor
     const cs = this.cs = this.rand(0.75, 1.4);  // crown size factor
     const ls = this.ls = st.leafSize ?? 1;      // leaf blob size factor
 
-    this.addMesh(trunkG, bark, [0, th, 0], [tw, th, tw]);
-    this.addMesh(shared('oak:flare', () => new CylinderGeometry(0.34, 0.62, 0.5, 7)), bark, [0, 0.25, 0], [tw, 1, tw]); // root flare
+    const b = new MergeBuilder();
+    b.add(trunkG, bark, { position: [0, th, 0], scale: [tw, th, tw] });
+    b.add(shared('oak:flare', () => new CylinderGeometry(0.34, 0.62, 0.5, 7)), bark, { position: [0, 0.25, 0], scale: [tw, 1, tw] }); // root flare
     this.addShape('cylinder', { radius: 0.4 * tw, height: 2 * th }, [0, th, 0], null, 'trunk');
 
     if (this.complexity === 0) {
       // A dense, lumpy crown: big core blob plus ~10 smaller ones around it.
-      const b = new MergeBuilder();
       const cy = 2 * th + cs;
       b.add(crownG, leaf, { position: [0, cy, 0], scale: [1.4 * cs * ls, 1.1 * cs * ls, 1.4 * cs * ls], tint: this._leafTint(0.6) });
       for (let i = 0; i < 10; i++) {
@@ -183,13 +188,12 @@ export class OakTree extends WorldModel {
       return;
     }
 
-    this._buildBranched(blobG, bark, leaf);
+    this._buildBranched(b, blobG, bark, leaf);
   }
 
-  _buildBranched(blobG, bark, leaf) {
+  _buildBranched(builder, blobG, bark, leaf) {
     const rnd = this.random;
     const c = this.complexity;
-    const builder = new MergeBuilder();
     const tips = [];
     const joints = [];
     const th = this.th, cs = this.cs;

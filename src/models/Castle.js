@@ -1,19 +1,11 @@
 import { BoxGeometry, CylinderGeometry, ConeGeometry, Shape, ExtrudeGeometry, Quaternion, Vector3 } from 'three';
-import { WorldModel, MergeBuilder, shared, material, stoneMaterial } from '../WorldModel.js';
+import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
 
 /** Highest supported castle complexity. */
 export const MAX_CASTLE_COMPLEXITY = 5;
 
-// Wall pattern -> matching colours; the pattern is picked per castle.
-const STONE_STYLES = {
-  stone: [0x9a9690, 0x8d8a85, 0xa39e94, 0x948f86, 0xb3a88f],
-  brick: [0xb5573c, 0xa34a34, 0x9c6a50],
-  cobble: [0xa09b90, 0x8a8478, 0xb0a58f],
-  mossy: [0xa0a094, 0x939a86],
-  plaster: [0xe0d6c2, 0xd8cdb8, 0xcfd2c8],
-};
-const STONE_KINDS = Object.keys(STONE_STYLES);
-const ROOFS = [0x8b2f2f, 0x2f4f7a, 0x5b3a29, 0x3f5a3a, 0x5e5e63, 0x7a3b6a, 0xa0683c];
+// Wall texture kinds (see src/textures); the kind is picked per castle, then one of its ready-made variants.
+const STONE_KINDS = ['stone', 'brick', 'cobble', 'mossy', 'plaster'];
 const TOWER_ROOFS = ['cone', 'pyramid', 'crenel', 'mixed'];
 const BANNERS = [0xb03030, 0x2f5f9a, 0xc9a227, 0x3a7a4a];
 const SHUTTERS = [0x2f5f4a, 0x7a3030, 0x3a4f7a, 0x5a3b22];
@@ -40,7 +32,9 @@ const gableG = () => shared('castle:gable', () => {                             
  * Procedural castle. Footprint centred on the origin, base at y = 0, the gate
  * faces +Z. Everything is random (random `seed` by default) so no two castles
  * are identical, even with the same complexity. The seed changes the wall
- * material (stone, brick, cobble, mossy, plaster), roof colour and tower roof
+ * texture (stone, brick, cobble, mossy, plaster, each in 5 ready-made variants
+ * from the shared pool; `textures: {stone: 1, shingle: 3}` pins them), the
+ * roof shingles and tower roof
  * style (cones, pyramids, battlements or a mix), tower height and thickness,
  * keep size and height, courtyard shape (square, wide or deep) and how far
  * the back corners bulge out, wall height, and the gate width.
@@ -59,7 +53,7 @@ const gableG = () => shared('castle:gable', () => {                             
  * height and style (conical roof or battlements), wall segments have different
  * heights, the keep door and stair turret are off-centre, and a banner flies
  * from the keep. Stone is vertex-tinted per block, darker towards the ground,
- * and gets a masonry texture in browsers.
+ * and wears the hand-drawn masonry texture in browsers.
  *
  * Every tower and the keep carry arched windows (see getWindows()).
  *
@@ -76,8 +70,8 @@ export class Castle extends WorldModel {
     const b = new MergeBuilder();
     this._b = b;
     const kind = STONE_KINDS[Math.floor(this.random() * STONE_KINDS.length)];
-    const palette = STONE_STYLES[kind];
-    this._stone = stoneMaterial(palette[Math.floor(this.random() * palette.length)], kind);
+    this.skip(1); // the random wall colour of earlier versions
+    this._stone = this.surface(kind);
     this._towerRoof = TOWER_ROOFS[Math.floor(this.random() * TOWER_ROOFS.length)];
     this._th = this.rand(0.75, 1.7);   // tower height factor
     this._tr = this.rand(0.9, 1.25);   // tower radius factor
@@ -85,7 +79,8 @@ export class Castle extends WorldModel {
     this._stretch = [1, 1.35, 1.7][Math.floor(this.random() * 3)] * this.rand(0.95, 1.1); // courtyard width / depth
     this._jit = this.rand(0.02, 0.4);  // how far the back corners bulge out
     this._gateW = this.rand(0.9, 1.3);
-    this._roof = material(ROOFS[Math.floor(this.random() * ROOFS.length)], true, true);
+    this.skip(1); // the random roof colour of earlier versions
+    this._roof = this.surface('shingle');
     this._banner = material(BANNERS[Math.floor(this.random() * BANNERS.length)], true);
 
     // Keep: bigger and taller with complexity.
@@ -127,7 +122,7 @@ export class Castle extends WorldModel {
   }
 
   _stoneBox(position, scale, quaternion = null, grime = true) {
-    this._b.add(boxG(), this._stone, { position, scale, quaternion, tint: this._tint(), grime, uv: 'box' });
+    this._b.add(boxG(), this._stone, { position, scale, quaternion, tint: this._tint(), grime });
   }
 
   _stoneCyl(position, scale, grime = true) {
@@ -176,7 +171,7 @@ export class Castle extends WorldModel {
       const tr = 0.5, tx = this.rand(-0.4, 0.4), th = h * this.rand(1.05, 1.2);
       this._stoneCyl([tx, th / 2, -d / 2 - tr * 0.4], [tr, th, tr]);
       this.addShape('cylinder', { radius: tr, height: th }, [tx, th / 2, -d / 2 - tr * 0.4], null, 'turret');
-      b.add(coneG(), this._roof, { position: [tx, th + tr * 0.8, -d / 2 - tr * 0.4], scale: [tr * 1.25, tr * 1.6, tr * 1.25], tint: this._tint() });
+      b.add(coneG(), this._roof, { position: [tx, th + tr * 0.8, -d / 2 - tr * 0.4], scale: [tr * 1.25, tr * 1.6, tr * 1.25], tint: this._tint(), uv: 'cone' });
     }
     // Door on +Z, slightly off-centre.
     this._doorX = this.rand(-0.4, 0.4);
@@ -232,7 +227,7 @@ export class Castle extends WorldModel {
         const a = (i + 0.5) / n * Math.PI * 2;
         this._b.add(boxG(), this._stone, {
           position: [x + Math.sin(a) * r * 1.02, y0 + h + 0.15, z + Math.cos(a) * r * 1.02],
-          scale: [r * 2.4 / n, 0.3, 0.16], yaw: a, tint: this._tint(), uv: 'box',
+          scale: [r * 2.4 / n, 0.3, 0.16], yaw: a, tint: this._tint(),
         });
       }
     } else {
@@ -247,7 +242,7 @@ export class Castle extends WorldModel {
           [x, y0 + h + roofH, z],
         ] }, [0, 0, 0], null, 'roof');
       } else {
-        b.add(coneG(), this._roof, { position: [x, y0 + h + roofH / 2, z], scale: [r * o, roofH, r * o], tint: this._tint() });
+        b.add(coneG(), this._roof, { position: [x, y0 + h + roofH / 2, z], scale: [r * o, roofH, r * o], tint: this._tint(), uv: 'cone' });
         this.addShape('cone', { radius: r * o, height: roofH }, [x, y0 + h + roofH / 2, z], null, 'roof');
       }
     }
