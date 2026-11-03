@@ -13,3 +13,6 @@ export {
 export {
   Wall, Door, Window, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower, FlowerBud, LeafModel,
 } from './models/Parts.js';
+export {
+  TEXTURE_KINDS, TEXTURE_VARIANTS, pickVariant, getTexture, pooledMaterial, preloadTextures, disposeTextures,
+} from './textures/index.js';

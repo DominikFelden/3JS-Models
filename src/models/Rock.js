@@ -1,5 +1,6 @@
 import { IcosahedronGeometry } from 'three';
-import { WorldModel, shared, material, mulberry32 } from '../WorldModel.js';
+import { WorldModel, shared, mulberry32 } from '../WorldModel.js';
+import { projectUV } from '../textures/uv.js';
 
 /** Number of distinct rock shapes (bounds the shared geometry cache). */
 export const ROCK_VARIANTS = 64;
@@ -9,13 +10,16 @@ export const ROCK_VARIANTS = 64;
  * The model's `seed` (random by default, see WorldModel) selects one of
  * ROCK_VARIANTS shapes (seed % ROCK_VARIANTS). Geometry is cached per variant,
  * so any number of rocks share at most ROCK_VARIANTS sets of GPU buffers, and
- * the same seed always gives the same rock.
+ * the same seed always gives the same rock. The stone texture (granite,
+ * sandstone, slate...) is picked from the shared pool (`textures: {rock}`
+ * pins one).
  * Collider: 'convex' hull = the displaced vertices (a rock is convex enough).
  */
 export class Rock extends WorldModel {
   constructor(options = {}) {
     super('Rock', options);
     const variant = this.seed % ROCK_VARIANTS;
+    const mat = this.surface('rock', null, false);
     const g = shared(`rock:${variant}`, () => {
       const geo = new IcosahedronGeometry(0.8, 0); // 12 vertices before subdivision
       const rnd = mulberry32(variant);
@@ -28,6 +32,7 @@ export class Rock extends WorldModel {
         pos.setXYZ(i, pos.getX(i) * f, pos.getY(i) * f * 0.7, pos.getZ(i) * f);
       }
       geo.computeVertexNormals();
+      projectUV(geo, 'world', mat.userData.mapping.tile); // texture keeps its size whatever the shape
       // Unique vertex positions, for the exposed convex hull.
       const pts = new Map();
       for (let i = 0; i < pos.count; i++) {
@@ -37,7 +42,7 @@ export class Rock extends WorldModel {
       geo.userData.hull = [...pts.values()];
       return geo;
     });
-    this.addMesh(g, material(0x8a8a8a, true), [0, 0.3, 0]);
+    this.addMesh(g, mat, [0, 0.3, 0]);
     // Shift hull up so the rock sits roughly on y = 0.
     this.addShape('convex', { points: g.userData.hull.map(([x, y, z]) => [x, y + 0.3, z]) });
   }

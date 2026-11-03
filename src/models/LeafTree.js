@@ -1,7 +1,7 @@
-import { CylinderGeometry, Vector3, Color } from 'three';
-import { WorldModel, MergeBuilder, shared, barkMaterial } from '../WorldModel.js';
-import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY, randomTrunkColor, randomLeafColor } from './branching.js';
-import { TriangleLeaf, LEAF_TYPES, leafMaterial } from './Leaf.js';
+import { CylinderGeometry, Vector3 } from 'three';
+import { WorldModel, MergeBuilder, shared } from '../WorldModel.js';
+import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.js';
+import { TriangleLeaf, LEAF_TYPES } from './Leaf.js';
 
 
 /**
@@ -14,9 +14,12 @@ import { TriangleLeaf, LEAF_TYPES, leafMaterial } from './Leaf.js';
  * (limbs fork `complexity + 1` times up to complexity 5; beyond that extra
  * complexity adds slower generations, more limbs and more leaves per twig).
  *
+ * The seed also picks the bark and leaf textures from the shared pool
+ * (`textures: {bark, leaf}` pins one of the 5 variants).
+ *
  * Options: trunkHeight, trunkThickness, leafSize (factors, 1 = seed default),
  * leafType (key of `LEAF_TYPES`, default random), trunkColor, leafColor (any
- * three.js colour). Unset options stay seed-driven.
+ * three.js colour; recolours the picked texture). Unset options stay seed-driven.
  *
  * Colliders: [trunk cylinder, crown sphere, ...branch cylinders].
  * Tags: 'trunk', 'crown', 'branch'. The leaf class used is in `this.leafClass`.
@@ -27,14 +30,13 @@ export class LeafTree extends WorldModel {
     this.complexity = WorldModel.clampInt(options.complexity, 0, MAX_TREE_COMPLEXITY, 4);
     const rnd = this.random;
     const st = treeStyle(options);
-    const randomBark = randomTrunkColor(rnd);
-    const bark = barkMaterial(st.trunkColor ?? randomBark);
+    this.skip(1); // the random bark colour of earlier versions
+    const bark = this.surface('bark', st.trunkColor, false);
     const th = this.rand(0.8, 1.4) * (st.trunkHeight ?? 1), tw = this.rand(0.8, 1.2) * (st.trunkThickness ?? 1), cs = this.rand(0.9, 1.3);
     const types = Object.keys(LEAF_TYPES);
     const randomType = types[Math.floor(rnd() * types.length)];
     this.leafClass = LEAF_TYPES[options.leafType] ?? LEAF_TYPES[randomType];
-    const rgb = new Color(st.leafColor ?? randomLeafColor(rnd));
-    const colour = [rgb.r, rgb.g, rgb.b];
+    if (st.leafColor === undefined) this.skip(2); // the random leaf colour of earlier versions
 
     const builder = new MergeBuilder();
     builder.add(shared('leaftree:trunk', () => new CylinderGeometry(0.2, 0.34, 1, 7)), bark, { position: [0, th, 0], scale: [tw, 2 * th, tw] });
@@ -55,7 +57,7 @@ export class LeafTree extends WorldModel {
     }
 
     // Leaves: clusters on every twig tip, single leaves on the last forks.
-    const mat = leafMaterial();
+    const mat = this.surface('leaf', st.leafColor);
     const Kind = this.leafClass;
     const size = this.rand(0.8, 1.2) * (st.leafSize ?? 1);
     const spots = [...tips.map((p) => [p, 4]), ...joints.slice(-Math.ceil(joints.length / 2)).map((p) => [p, 2])];
@@ -66,13 +68,13 @@ export class LeafTree extends WorldModel {
         const spread = rnd() * 2 * Math.PI;
         const outward = new Vector3(p.x + Math.cos(spread) * 0.5, 0, p.z + Math.sin(spread) * 0.5);
         if (outward.lengthSq() < 1e-6) outward.set(Math.cos(spread), 0, Math.sin(spread));
-        const k = 1.1 + this.rand(-0.25, 0.35);
+        const k = 1 + this.rand(-0.2, 0.2); // brightness of this leaf
         const leaf = new Kind(p.clone().add(new Vector3(this.rand(-0.06, 0.06), this.rand(-0.04, 0.04), this.rand(-0.06, 0.06))), outward, {
           length: this.rand(0.3, 0.45) * size,
           width: this.rand(0.18, 0.28) * size * (Kind === TriangleLeaf ? 1.1 : 1),
           droop: this.rand(0.4, 1.1),
           roll: this.rand(-0.5, 0.5),
-          tint: [k * colour[0] * this.rand(0.9, 1.1), k * colour[1], k * colour[2]],
+          tint: [k * this.rand(0.93, 1.07), k, k],
         });
         leaf.place(builder, mat);
         this.leaves.push(leaf);

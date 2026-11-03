@@ -3,13 +3,14 @@ import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
 
 /**
  * Bush: a dense clump of ~8 squashed, differently tinted spheres, sometimes
- * with berries. Collider: one sphere (radius 0.7).
+ * with berries. The foliage texture is picked from the shared pool
+ * (`textures: {foliage}` pins one). Collider: one sphere (radius 0.7).
  */
 export class Bush extends WorldModel {
   constructor(options) {
     super('Bush', options);
     const g = shared('bush:sphere', () => new SphereGeometry(1, 7, 5));
-    const green = material(0x4a9a3c, true, true);
+    const green = this.surface('foliage');
     const b = new MergeBuilder();
     for (let i = 0; i < 8; i++) {
       const a = this.rand(0, Math.PI * 2), r = i === 0 ? 0 : this.rand(0.2, 0.5);
@@ -17,7 +18,7 @@ export class Bush extends WorldModel {
       const y = 0.25 + (i === 0 ? 0.15 : this.rand(0, 0.25));
       const k = 0.75 + y * 0.6 + this.rand(-0.08, 0.08);
       b.add(g, green, {
-        position: [Math.cos(a) * r, y, Math.sin(a) * r], scale: [s, s * 0.75, s], yaw: a,
+        position: [Math.cos(a) * r, y, Math.sin(a) * r], scale: [s, s * 0.75, s], yaw: a, detail: 1.7,
         tint: [k * this.rand(0.95, 1.15), k, k * this.rand(0.8, 1)],
       });
     }

@@ -1,22 +1,11 @@
 import { BoxGeometry, ConeGeometry, Shape, ExtrudeGeometry } from 'three';
-import { WorldModel, MergeBuilder, shared, material, surfaceMaterial } from '../WorldModel.js';
+import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
 
 /** Available house types (value of the `type` option). */
 export const HOUSE_TYPES = ['cottage', 'longhouse', 'towerhouse'];
 
-// Palettes: colours are picked per instance from these, so houses vary.
-const WALLS = [0xd9c8a9, 0xc9b79c, 0xe6dccb, 0xb89f7d, 0xcfd2c8];
-const ROOFS = [0x8b2f2f, 0x6b4a2f, 0x4a5d6b, 0x7a3b2b, 0x3f5a3a, 0x5e5e63, 0xa0683c];
-// Wall surface pattern with the colours that suit it.
-const WALL_STYLES = {
-  plaster: WALLS,
-  brick: [0xb5573c, 0xa34a34, 0xc9784f, 0x8e4a3a],
-  planks: [0xb08a5a, 0x8a6a42, 0xc9a577, 0x6f5a45, 0x7d8a8f],
-  stone: [0xb8b4aa, 0xa39e94, 0xc4b9a0],
-  cobble: [0xa8a49a, 0x9d9689, 0xb0a58f],
-  mossy: [0xa8a89c, 0x9aa08c],
-};
-const WALL_KINDS = Object.keys(WALL_STYLES);
+// Wall texture kinds (see src/textures); every kind has several ready-made variants.
+const WALL_KINDS = ['plaster', 'brick', 'planks', 'stone', 'cobble', 'mossy'];
 const BALCONY_WOOD = [0x5a3b22, 0x3d2a1b, 0x7a5a3a, 0x2f5f4a];
 const SHUTTERS = [0x2f5f4a, 0x7a3030, 0x3a4f7a, 0x5a3b22, 0x6b6b3a];
 
@@ -59,10 +48,12 @@ const SPECS = {
  * Options (besides the WorldModel ones):
  *  - type: 'cottage' | 'longhouse' | 'towerhouse' (default 'cottage')
  *
- * Per instance (random `seed` by default) the seed changes: wall material
- * and colour (plaster, brick, planks, stone, cobble, mossy), roof shape and
- * colour, number of floors, proportions, window layout, chimney, timber
- * framing and balconies on upper floors.
+ * Per instance (random `seed` by default) the seed changes: wall texture
+ * (plaster, brick, planks, stone, cobble, mossy: one of 5 ready-made
+ * variants each, shared by all houses) and roof shingles (also picked from
+ * the pool; `textures: {brick: 2, shingle: 0}` pins them), roof shape, number
+ * of floors, proportions, window layout, chimney, timber framing and
+ * balconies on upper floors.
  *
  * Colliders: [body box, roof convex hull]. Tags: 'body', 'roof'.
  * Windows: see `getWindows()`; they are not colliders.
@@ -82,17 +73,17 @@ export class House extends WorldModel {
     const roofH = spec.roofH * this.rand(0.75, 1.4);
     const roofShape = this.type === 'towerhouse' ? 'pyramid' : (rnd() < 0.5 ? 'pyramid' : 'gable');
     const wallKind = WALL_KINDS[Math.floor(rnd() * WALL_KINDS.length)];
-    const palette = WALL_STYLES[wallKind];
-    const wallMat = surfaceMaterial(wallKind, palette[Math.floor(rnd() * palette.length)]);
-    const roofMat = material(ROOFS[Math.floor(rnd() * ROOFS.length)], true, true);
+    this.skip(2); // the random wall and roof colours of earlier versions
+    const wallMat = this.surface(wallKind);
+    const roofMat = this.surface('shingle');
     const beamMat = material(0x3d2a1b, true);
-    const stoneMat = material(0x8d8a85, true, true);
+    const stoneMat = this.surface('stone');
     const shutters = rnd() < 0.6 ? SHUTTERS[Math.floor(rnd() * SHUTTERS.length)] : null;
     const timbered = rnd() < 0.5 && (wallKind === 'plaster' || wallKind === 'brick');
     const warm = () => { const k = this.rand(0.93, 1.05); return [k, k * this.rand(0.97, 1.02), k * this.rand(0.94, 1.0)]; };
 
     const b = new MergeBuilder();
-    b.add(boxG(), wallMat, { position: [0, h / 2, 0], scale: [w, h, d], tint: warm(), grime: true, uv: 'box' });
+    b.add(boxG(), wallMat, { position: [0, h / 2, 0], scale: [w, h, d], tint: warm(), grime: true });
     b.add(boxG(), stoneMat, { position: [0, 0.2, 0], scale: [w + 0.16, 0.4, d + 0.16], tint: warm(), grime: true }); // stone foundation
     this.addShape('box', { size: [w, h, d] }, [0, h / 2, 0], null, 'body');
 

@@ -1,8 +1,10 @@
 import {
   Group, Mesh, Vector3, Quaternion, Euler, Matrix4, BoxGeometry, CylinderGeometry, MeshStandardMaterial,
-  CanvasTexture, RepeatWrapping, SRGBColorSpace, Float32BufferAttribute,
+  Float32BufferAttribute,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { pooledMaterial, pickVariant, TEXTURE_VARIANTS } from './textures/pool.js';
+import { projectUV, offsetUV } from './textures/uv.js';
 
 const _p = new Vector3();
 const _q = new Quaternion();
@@ -42,156 +44,16 @@ export function material(color, flatShading = false, vertexColors = false) {
   return shared(`mat:${color}:${flatShading}:${vertexColors}`, () => new MeshStandardMaterial({ color, flatShading, roughness: 1, vertexColors }));
 }
 
-/** Size in world units of one stone texture tile (4 courses of blocks). */
-export const STONE_TILE = 2.5;
-
-/** Surface patterns available to `surfaceMaterial` (procedural canvas textures). */
-export const SURFACES = ['stone', 'brick', 'cobble', 'plaster', 'planks', 'mossy', 'shingle'];
-
-/** Draw one pattern tile (grey-scale-ish; the material colour tints it). */
-function drawPattern(ctx, kind, S, rnd) {
-  const noise = (n, a) => {
-    for (let i = 0; i < n; i++) {
-      const v = Math.floor(rnd() * 255);
-      ctx.fillStyle = `rgba(${v},${v},${v},${a})`;
-      ctx.fillRect(rnd() * S, rnd() * S, 2, 2);
-    }
-  };
-  // Rows of blocks with random cut points; `gap` = mortar width.
-  const courses = (rows, minN, maxN, gap, lo, hi, mortar, tintFn) => {
-    const rh = S / rows;
-    ctx.fillStyle = mortar;
-    ctx.fillRect(0, 0, S, S);
-    for (let r = 0; r < rows; r++) {
-      const n = minN + Math.floor(rnd() * (maxN - minN + 1));
-      const cuts = [];
-      let x = rnd() * S;
-      for (let i = 0; i < n; i++) { cuts.push(x); x += (S / n) * (0.7 + rnd() * 0.6); }
-      cuts.sort((p, q) => p - q);
-      cuts.forEach((c0, i) => {
-        const c1 = i + 1 < n ? cuts[i + 1] : cuts[0] + S;
-        const v = lo + Math.floor(rnd() * (hi - lo));
-        ctx.fillStyle = tintFn(v, rnd);
-        for (const o of [0, -S]) ctx.fillRect(c0 + o + gap, r * rh + gap, c1 - c0 - gap * 2, rh - gap * 2);
-      });
-    }
-  };
-  const grey = (v) => `rgb(${v},${v - 2},${v - 6})`;
-  if (kind === 'brick') {
-    courses(8, 4, 4, 1.5, 175, 245, '#8a8a8a', (v) => `rgb(${v},${v - 6},${v - 8})`);
-    noise(3000, 0.1);
-  } else if (kind === 'cobble') {
-    courses(6, 5, 7, 2.5, 140, 225, '#4a4845', grey);
-    noise(3500, 0.1);
-  } else if (kind === 'plaster') {
-    ctx.fillStyle = '#e9e6e0';
-    ctx.fillRect(0, 0, S, S);
-    for (let i = 0; i < 40; i++) {
-      const v = 200 + Math.floor(rnd() * 50);
-      ctx.fillStyle = `rgba(${v},${v},${v - 6},0.25)`;
-      ctx.beginPath();
-      ctx.arc(rnd() * S, rnd() * S, 8 + rnd() * 30, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    noise(4000, 0.07);
-  } else if (kind === 'planks') {
-    const n = 8, w = S / n;
-    for (let i = 0; i < n; i++) {
-      const v = 170 + Math.floor(rnd() * 70);
-      ctx.fillStyle = `rgb(${v},${v - 4},${v - 10})`;
-      ctx.fillRect(i * w, 0, w, S);
-      for (let g = 0; g < 14; g++) {
-        const gv = Math.floor(rnd() * 120);
-        ctx.fillStyle = `rgba(${gv},${gv},${gv},0.1)`;
-        ctx.fillRect(i * w + rnd() * w, 0, 1 + rnd() * 1.5, S);
-      }
-      ctx.fillStyle = '#3a3a3a';
-      ctx.fillRect(i * w, 0, 2, S);
-    }
-  } else if (kind === 'shingle') {
-    const rows = 8, rh = S / rows, cols = 8, cw = S / cols;
-    ctx.fillStyle = '#555';
-    ctx.fillRect(0, 0, S, S);
-    for (let r = 0; r < rows; r++) for (let c = 0; c <= cols; c++) {
-      const v = 160 + Math.floor(rnd() * 80);
-      ctx.fillStyle = `rgb(${v},${v},${v})`;
-      const x = c * cw + (r % 2 ? cw / 2 : 0) - cw / 2;
-      ctx.beginPath();
-      ctx.roundRect(x + 1, r * rh + 1, cw - 2, rh * 1.4, [0, 0, cw / 2, cw / 2]);
-      ctx.fill();
-    }
-    noise(1500, 0.08);
-  } else {
-    courses(4, 3, 4, 2, 150, 220, '#5c5a56', grey);
-    if (kind === 'mossy') {
-      for (let i = 0; i < 90; i++) {
-        ctx.fillStyle = `rgba(${40 + rnd() * 30},${110 + rnd() * 50},${30 + rnd() * 30},${0.2 + rnd() * 0.3})`;
-        ctx.beginPath();
-        ctx.arc(rnd() * S, rnd() * S, 3 + rnd() * 14, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    noise(2500, 0.08);
-  }
-}
-
 /**
- * Procedural texture of the given pattern, drawn once on a canvas. Only
- * available in a browser (returns null elsewhere, e.g. under Node tests);
- * models then fall back to plain colour.
+ * Material wearing one of the pooled, hand-drawn textures (see `src/textures`).
+ * `kind` is a texture kind ('bark', 'brick', ...), `variant` one of its
+ * TEXTURE_VARIANTS ready-made textures (use `pickVariant` / `WorldModel.variant`).
+ * Pass `color` only to recolour; omit it to keep the variant's own colourway.
+ * Vertex colours carry the per-part tint of `MergeBuilder`. The same arguments
+ * always return the same shared material.
  */
-function patternTexture(kind) {
-  return shared(`tex:${kind}`, () => {
-    if (typeof document === 'undefined') return null;
-    const S = 256;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    drawPattern(cv.getContext('2d'), kind, S, mulberry32(1234 + SURFACES.indexOf(kind)));
-    const t = new CanvasTexture(cv);
-    t.wrapS = t.wrapT = RepeatWrapping;
-    t.colorSpace = SRGBColorSpace;
-    t.anisotropy = 4;
-    return t;
-  });
-}
-
-/**
- * Vertex-coloured material with a procedural surface pattern (one of
- * SURFACES), where canvases exist. Use with `uv: 'box' | 'cyl'` in MergeBuilder.
- */
-export function surfaceMaterial(kind, color) {
-  return shared(`mat:${kind}:${color}`, () => new MeshStandardMaterial({
-    color, flatShading: true, roughness: 0.95, vertexColors: true, map: patternTexture(kind),
-  }));
-}
-
-/** Weathered stone: vertex-coloured, with a masonry texture where canvases exist. */
-export function stoneMaterial(color, kind = 'stone') {
-  return surfaceMaterial(kind, color);
-}
-
-/** Bark: plain material with a wood-grain texture where canvases exist. */
-export function barkMaterial(color) {
-  return shared(`mat:bark:${color}`, () => new MeshStandardMaterial({
-    color, flatShading: true, roughness: 1,
-    map: shared('tex:bark', () => {
-      if (typeof document === 'undefined') return null;
-      const W = 64, H = 128, cv = document.createElement('canvas');
-      cv.width = W; cv.height = H;
-      const ctx = cv.getContext('2d'), rnd = mulberry32(77);
-      ctx.fillStyle = '#c8c8c8';
-      ctx.fillRect(0, 0, W, H);
-      for (let i = 0; i < 40; i++) {
-        const v = 90 + Math.floor(rnd() * 110);
-        ctx.fillStyle = `rgba(${v},${v},${v},0.5)`;
-        ctx.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 3, 10 + rnd() * 50);
-      }
-      const t = new CanvasTexture(cv);
-      t.wrapS = t.wrapT = RepeatWrapping;
-      t.colorSpace = SRGBColorSpace;
-      return t;
-    }),
-  }));
+export function surfaceMaterial(kind, variant, color = null, vertexColors = true) {
+  return pooledMaterial(kind, variant, { color, flatShading: true, vertexColors, roughness: 0.95 });
 }
 
 /** Window glass: slightly emissive so windows stay visible in shadow. */
@@ -222,32 +84,52 @@ export class MergeBuilder {
    * Extras for textured / vertex-coloured materials:
    *  - tint:  brightness number or [r,g,b] multiplier baked into vertex colours
    *  - grime: darken (and slightly green) the lowest ~2.5 units, like dirt and moss
-   *  - uv:    'box' | 'cyl' rescales UVs so textures keep a constant world size
+   *  - uv:    how a pooled texture is laid on this part so it keeps a constant
+   *           world size: 'face' | 'world' (projected from the triangles) or
+   *           'box' | 'cyl' | 'cone' | 'sphere' (native UVs of that primitive,
+   *           rescaled) or 'native' (the geometry's own UVs). Default: the
+   *           mapping of the texture kind.
+   *  - detail: pattern density factor, 2 draws the texture at half the size
+   *           (for small models such as a bush). Default 1.
    */
-  add(geometry, mat, { position = [0, 0, 0], scale = [1, 1, 1], yaw = 0, quaternion = null, tint = 1, grime = false, uv = null } = {}) {
+  add(geometry, mat, { position = [0, 0, 0], scale = [1, 1, 1], yaw = 0, quaternion = null, tint = 1, grime = false, uv = null, detail = 1 } = {}) {
     const q = quaternion ?? _q.setFromAxisAngle(_yAxis, yaw);
     this._m.compose(_p.set(...position), q, _s.set(...scale));
-    const g = geometry.clone();
-    if (uv && g.attributes.uv && mat.map) this._scaleUV(g, uv, scale);
+    let g = geometry.clone();
+    const map = mat.userData.mapping;
+    const mode = map && mat.map ? (uv ?? map.uv) : null;
+    const projected = mode === 'face' || mode === 'world';
+    const tile = map ? map.tile / detail : 1;
+    if (map && !mode) g.deleteAttribute('uv'); // no texture available (Node): UVs would only cost memory
+    else if (mode && mode !== 'native' && !projected && g.attributes.uv) this._scaleUV(g, geometry, mode, scale, tile);
     g.applyMatrix4(this._m);
+    if (mode && (projected || !g.attributes.uv)) g = projectUV(g, mode === 'face' ? 'face' : 'world', tile);
     if (mat.vertexColors) this._colour(g, tint, grime);
     if (!this._parts.has(mat)) this._parts.set(mat, []);
     this._parts.get(mat).push(g);
   }
 
-  _scaleUV(g, kind, [sx, sy, sz]) {
-    const uv = g.attributes.uv, T = STONE_TILE;
-    if (kind === 'box') {
+  /** Rescale the native UVs of a primitive so one texture repeat is `T` world units wide. */
+  _scaleUV(g, source, mode, [sx, sy, sz], T) {
+    const uv = g.attributes.uv;
+    if (mode === 'box') {
       // BoxGeometry: 4 vertices per face in the order +x, -x, +y, -y, +z, -z.
       const dims = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
       for (let i = 0; i < uv.count; i++) {
         const [du, dv] = dims[Math.min(5, i >> 2)];
         uv.setXY(i, uv.getX(i) * du / T, uv.getY(i) * dv / T);
       }
-    } else {
-      const circ = 2 * Math.PI * sx;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * circ / T, uv.getY(i) * sy / T);
+      return;
     }
+    // Cylinder / cone / sphere: u runs around, v along. Whole repeats around the
+    // circumference close the seam; thin twigs get one (finer) repeat instead of
+    // a random sliver of the picture.
+    const bb = source.boundingBox ?? (source.computeBoundingBox(), source.boundingBox);
+    const r0 = Math.max(bb.max.x, -bb.min.x, bb.max.z, -bb.min.z), h0 = bb.max.y - bb.min.y;
+    const r = r0 * (sx + sz) / 2, circ = 2 * Math.PI * r;
+    const n = Math.max(1, Math.round(circ / T)), t = circ / n;
+    const along = mode === 'sphere' ? Math.PI * h0 / 2 * sy : mode === 'cone' ? Math.hypot(h0 * sy, r) : h0 * sy;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * n, uv.getY(i) * along / t);
   }
 
   _colour(g, tint, grime) {
@@ -273,6 +155,12 @@ export class MergeBuilder {
       const merged = mergeGeometries(list, false);
       geoms.forEach((g) => g.dispose());
       if (!merged) continue;
+      const map = mat.userData.mapping;
+      if (map && mat.map) {
+        // Each model shows another part of the shared picture.
+        const rnd = mulberry32((model.seed ^ map.hash) >>> 0);
+        offsetUV(merged, rnd() * map.shift[0], rnd() * map.shift[1]);
+      }
       model._ownedGeometries.push(merged);
       const mesh = new Mesh(merged, mat);
       mesh.castShadow = mesh.receiveShadow = true;
@@ -296,6 +184,9 @@ export class MergeBuilder {
  *              `model.seed` to rebuild the same model later.
  *  - complexity: integer >= 0 (only used by models that support it: trees,
  *              castles). 0 = simplest form. Clamped per model.
+ *  - textures: pins texture variants, {kind: 0..4}, e.g. `{ bark: 2, brick: 0 }`.
+ *              By default every model picks one of the shared, ready-made
+ *              textures per kind from its seed (see `src/textures`).
  *
  * Geometry exposure: each model registers simple analytic shapes via
  * `addShape()`. `getColliders()` returns them in WORLD space, so physics /
@@ -309,6 +200,8 @@ export class WorldModel extends Group {
     this.options = options;
     this.seed = (options.seed ?? Math.floor(Math.random() * 4294967296)) >>> 0;
     this.random = mulberry32(this.seed); // per-instance PRNG, call as this.random()
+    this._pickRandom = mulberry32(this.seed ^ 0x7e57ed); // texture picks, so they never change a model's shape
+    this._variants = {};          // texture kind -> picked variant
     this._shapes = [];            // collision shapes in model-local space
     this._windows = [];           // window descriptions in model-local space
     this._doors = [];             // door descriptions in model-local space
@@ -325,10 +218,44 @@ export class WorldModel extends Group {
     return min + (max - min) * this.random();
   }
 
+  /**
+   * Advance the PRNG by `n` draws and ignore them. Marks the spots where a
+   * random choice (a colour) moved to the texture pool, so every seed still
+   * builds the same shapes as before.
+   */
+  skip(n = 1) {
+    for (let i = 0; i < n; i++) this.random();
+  }
+
   /** Clamp an integer option into [min, max]; non-numbers give `fallback`. */
   static clampInt(value, min, max, fallback) {
     const v = Number.isFinite(value) ? Math.round(value) : fallback;
     return Math.min(max, Math.max(min, v));
+  }
+
+  /**
+   * Texture variant (0 .. TEXTURE_VARIANTS - 1) this model wears for `kind`:
+   * picked from the shared pool by the seed (same seed, same textures), or
+   * pinned with `options.textures`. Stays the same for the whole model.
+   * `allowed` limits the random pick to some variants (a pin still wins).
+   */
+  variant(kind, allowed = null) {
+    if (!(kind in this._variants)) {
+      const picked = pickVariant(kind, this._pickRandom, allowed); // always drawn, so pinning one kind keeps the others
+      const forced = this.options.textures?.[kind];
+      this._variants[kind] = Number.isInteger(forced) && forced >= 0 && forced < TEXTURE_VARIANTS ? forced : picked;
+    }
+    return this._variants[kind];
+  }
+
+  /** Shared textured material of `kind` in this model's variant (see `surfaceMaterial`). */
+  surface(kind, color = null, vertexColors = true, allowed = null) {
+    return surfaceMaterial(kind, this.variant(kind, allowed), color, vertexColors);
+  }
+
+  /** The textures this model wears as `{kind: variant}`, e.g. `{ bark: 2, foliage: 0 }`. */
+  textureVariants() {
+    return { ...this._variants };
   }
 
   /** Add a visual mesh using shared geometry and material. */

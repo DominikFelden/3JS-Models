@@ -1,12 +1,10 @@
-import { BufferGeometry, Float32BufferAttribute, DoubleSide, MeshStandardMaterial, Vector3, Matrix4, Quaternion } from 'three';
+import { BufferGeometry, Float32BufferAttribute, Vector3, Matrix4, Quaternion } from 'three';
 import { shared } from '../WorldModel.js';
 
 const UP = new Vector3(0, 1, 0);
 
-/** Double-sided, vertex-coloured leaf material (flat leaves must be visible from below). */
-export function leafMaterial() {
-  return shared('leaf:mat', () => new MeshStandardMaterial({ roughness: 0.9, vertexColors: true, side: DoubleSide }));
-}
+/** Planar UVs: the whole 'leaf' texture (stem at v = 0, tip at v = 1, midrib at u = 0.5) spans the blade. */
+const leafUV = ([x, z]) => [Math.min(1, Math.max(0, x + 0.5)), Math.min(1, Math.max(0, z))];
 
 function flatGeometry(points) {
   // Fan around the base-centre point; blade lies in the XZ plane (stem at origin, tip along +Z, normal +Y).
@@ -17,13 +15,15 @@ function flatGeometry(points) {
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new Float32BufferAttribute(points.flatMap(() => [0, 1, 0]), 3));
+  g.setAttribute('uv', new Float32BufferAttribute(points.flatMap(leafUV), 2));
   g.setIndex(idx);
   return g;
 }
 
 /**
  * A single flat leaf. The blade lies in the local XZ plane: stem at the origin,
- * tip along +Z, upper face towards +Y, unit length and unit width.
+ * tip along +Z, upper face towards +Y, unit length and unit width. Its UVs
+ * map the pooled 'leaf' texture (midrib, veins) onto the blade once.
  *
  * `place(builder, material, ...)` orients it like a real leaf: it grows
  * outward from the twig, hangs down under its own weight (`droop`), and its
@@ -101,14 +101,16 @@ function ellipse(cx, cz, rx, rz, rot = 0, n = 10) {
 /** Flat geometry from triangles in the XZ plane; every triangle is wound so its face looks up (+Y). */
 function trianglesGeometry(tris) {
   const pos = [];
+  const uv = [];
   tris.forEach(([a, b, c]) => {
     const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
     const t = cross > 0 ? [a, c, b] : [a, b, c];
-    t.forEach(([x, z]) => pos.push(x, 0, z));
+    t.forEach((p) => { pos.push(p[0], 0, p[1]); uv.push(...leafUV(p)); });
   });
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new Float32BufferAttribute(Array.from({ length: pos.length / 3 }, () => [0, 1, 0]).flat(), 3));
+  g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
   return g;
 }
 
