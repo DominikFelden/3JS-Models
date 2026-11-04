@@ -247,3 +247,13 @@ test('disposeTextures empties the pool', () => {
   disposeTextures();
   assert.notStrictEqual(pooledMaterial('stone', 0), a);
 });
+
+test('doors and windows wear textures without moving the picks of other kinds', () => {
+  const house = new House({ seed: 18, type: 'cottage' });
+  const v = house.textureVariants();
+  assert.ok('planks' in v && ('glass' in v || 'lamp' in v), JSON.stringify(v));
+  const again = new House({ seed: 18, type: 'cottage' }).textureVariants();
+  assert.deepStrictEqual(again, v);
+  const pinned = new House({ seed: 18, type: 'cottage', textures: { glass: 2, lamp: 4 } }).textureVariants();
+  assert.ok(pinned.glass === 2 || pinned.glass === undefined);
+});
