@@ -202,6 +202,7 @@ export class WorldModel extends Group {
     this.random = mulberry32(this.seed); // per-instance PRNG, call as this.random()
     this._pickRandom = mulberry32(this.seed ^ 0x7e57ed); // texture picks, so they never change a model's shape
     this._variants = {};          // texture kind -> picked variant
+    this._ownVariants = {};       // same, drawn from per-kind streams (see ownVariant)
     this._shapes = [];            // collision shapes in model-local space
     this._windows = [];           // window descriptions in model-local space
     this._doors = [];             // door descriptions in model-local space
@@ -248,6 +249,26 @@ export class WorldModel extends Group {
     return this._variants[kind];
   }
 
+  /**
+   * Like `variant`, but drawn from a stream of its own (seed + kind), so the
+   * pick never moves the other kinds' picks. For parts added late (doors, windows).
+   */
+  ownVariant(kind, allowed = null) {
+    if (!(kind in this._ownVariants)) {
+      let h = this.seed ^ 0x51ed270b;
+      for (let i = 0; i < kind.length; i++) h = Math.imul(h ^ kind.charCodeAt(i), 16777619);
+      const picked = pickVariant(kind, mulberry32(h >>> 0), allowed);
+      const forced = this.options.textures?.[kind];
+      this._ownVariants[kind] = Number.isInteger(forced) && forced >= 0 && forced < TEXTURE_VARIANTS ? forced : picked;
+    }
+    return this._ownVariants[kind];
+  }
+
+  /** Material of `kind` in the model's own-stream variant (see `ownVariant`), optionally recoloured. */
+  ownSurface(kind, color = null, options = {}) {
+    return pooledMaterial(kind, this.ownVariant(kind), { color, flatShading: true, vertexColors: true, roughness: 0.95, ...options });
+  }
+
   /** Shared textured material of `kind` in this model's variant (see `surfaceMaterial`). */
   surface(kind, color = null, vertexColors = true, allowed = null) {
     return surfaceMaterial(kind, this.variant(kind, allowed), color, vertexColors);
@@ -255,7 +276,7 @@ export class WorldModel extends Group {
 
   /** The textures this model wears as `{kind: variant}`, e.g. `{ bark: 2, foliage: 0 }`. */
   textureVariants() {
-    return { ...this._variants };
+    return { ...this._ownVariants, ...this._variants };
   }
 
   /** Add a visual mesh using shared geometry and material. */
@@ -341,9 +362,12 @@ export class WorldModel extends Group {
       g.rotateX(Math.PI / 2); // axis along Z
       return g;
     });
-    const wood = material(0x4a3322, true);
-    const sill = material(opts.sill ?? 0xa9a49a, true);
-    const glass = glassMaterial(this.random() < 0.25);
+    const lit = this.random() < 0.25;
+    const wood = this.ownSurface('planks', 0x4a3322);
+    const sill = this.ownSurface('stone', opts.sill ?? 0xa9a49a);
+    const glass = lit
+      ? this.ownSurface('lamp', null, { roughness: 0.4, glow: 0.8 })
+      : this.ownSurface('glass', null, { roughness: 0.15, metalness: 0.3, glow: 0.35 });
     const r = width / 2, fw = 0.08;
     // Rectangular part; the arch (if any) replaces the top `r` of the height.
     const rh = arched ? height - r : height;
@@ -351,17 +375,17 @@ export class WorldModel extends Group {
     const F = (g, m, u, y, n, sx, sy, sz) => this._facePart(builder, g, m, position, yaw, [u, y, n], [sx, sy, sz]);
 
     F(box, wood, 0, yc, 0.06, width + fw * 2, rh + fw * 2, 0.12);          // frame, front at 0.12
-    F(box, glass, 0, yc, 0.06, width, rh, 0.1);                            // glass, front at 0.11
+    F(box, glass, 0, yc, 0.065, width, rh, 0.12);                          // glass, front at 0.125 (just proud of the frame)
     if (arched) {
       const ya = position[1] + height / 2 - r;
       F(disc, wood, 0, ya, 0.06, r + fw, r + fw, 0.12);
-      F(disc, glass, 0, ya, 0.06, r, r, 0.1);
+      F(disc, glass, 0, ya, 0.065, r, r, 0.12);
     }
     F(box, wood, 0, position[1], 0.065, 0.035, height, 0.13);             // vertical mullion
     F(box, wood, 0, position[1] - height * 0.1, 0.065, width, 0.035, 0.13); // transom
     F(box, sill, 0, position[1] - height / 2 - 0.05, 0.1, width + 0.3, 0.07, 0.2);
     if (shutters) {
-      const sm = material(shutters, true), sw = width * 0.5;
+      const sm = this.ownSurface('planks', shutters), sw = width * 0.5;
       for (const side of [-1, 1]) F(box, sm, side * (width / 2 + fw + sw / 2), yc, 0.05, sw, rh + fw * 2, 0.08);
     }
     this._windows.push({ position: [...position], yaw, width, height });
@@ -380,22 +404,22 @@ export class WorldModel extends Group {
       g.rotateX(Math.PI / 2);
       return g;
     });
-    const leaf = material(wood, true), dark = material(0x25211e, true), surround = material(frame, true);
+    const leaf = this.ownSurface('planks', wood), dark = material(0x25211e, true), surround = this.ownSurface('stone', frame);
     const r = width / 2, fw = 0.12;
     const rh = arched ? height - r : height;
     const y0 = position[1];
     const F = (g, m, u, y, n, sx, sy, sz) => this._facePart(builder, g, m, position, yaw, [u, y, n], [sx, sy, sz]);
 
     F(box, surround, 0, y0 + rh / 2, 0.07, width + fw * 2, rh + fw, 0.14);
-    F(box, leaf, 0, y0 + rh / 2, 0.06, width, rh, 0.1);
+    F(box, leaf, 0, y0 + rh / 2, 0.08, width, rh, 0.14);      // leaf, front at 0.15 (proud of the surround)
     if (arched) {
       const ya = y0 + height - r;
       F(disc, surround, 0, ya, 0.07, r + fw, r + fw, 0.14);
-      F(disc, leaf, 0, ya, 0.06, r, r, 0.1);
+      F(disc, leaf, 0, ya, 0.08, r, r, 0.14);
     }
-    for (let i = -1; i <= 1; i += 2) F(box, dark, i * width * 0.17, y0 + rh / 2, 0.062, 0.02, rh, 0.105); // plank gaps
-    for (const f of [0.2, 0.75]) F(box, dark, 0, y0 + rh * f, 0.12, width, 0.07, 0.04); // iron straps
-    F(box, dark, width * 0.32, y0 + height * 0.45, 0.13, 0.07, 0.07, 0.06);           // handle
+    for (let i = -1; i <= 1; i += 2) F(box, dark, i * width * 0.17, y0 + rh / 2, 0.09, 0.02, rh, 0.14); // plank gaps
+    for (const f of [0.2, 0.75]) F(box, dark, 0, y0 + rh * f, 0.165, width, 0.07, 0.04); // iron straps
+    F(box, dark, width * 0.32, y0 + height * 0.45, 0.19, 0.07, 0.07, 0.06);           // handle
     F(box, surround, 0, y0 + 0.04, 0.2, width + 0.5, 0.08, 0.4);                        // step
     this._doors.push({ position: [...position], yaw, width, height });
   }

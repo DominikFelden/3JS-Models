@@ -85,7 +85,7 @@ Proportions, wall and roof colours and window layout vary per instance. The door
 Trees, houses and castles own merged geometries (shared unit geometries are never freed). Call `model.dispose()` when you permanently remove one, e.g. when the viewer rebuilds a model. Not calling it only leaks memory; it never breaks rendering. Textures and their materials are shared by all models and are not freed by `dispose()`; call `disposeTextures()` when a whole world is discarded.
 
 ## Textures
-Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 12 kinds with 5 variants each, every one a seamless 256 × 256 picture with ink outlines, hatching, a watercolour wash and paper grain. The pool needs about 21 MB of GPU memory however many models you create, and all models wearing a variant share one material.
+Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 14 kinds with 5 variants each, every one a seamless 256 × 256 picture with ink outlines, hatching, a watercolour wash and paper grain. The pool needs about 21 MB of GPU memory however many models you create, and all models wearing a variant share one material.
 
 | Kind | Painted on | The 5 variants |
 |---|---|---|
@@ -94,8 +94,10 @@ Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 1
 | `needles` | pine needles | five conifer greens (one rarer) |
 | `leaf` | `LeafTree` leaves and leaf models (one picture per leaf, not tiled) | like `foliage` |
 | `rock` | rocks | grey, sandstone, slate, charcoal, greenish |
-| `brick`, `stone`, `cobble`, `mossy`, `plaster`, `planks` | walls of houses, castles and wall parts; `planks` also railings and balconies | five colourways each |
+| `brick`, `stone`, `cobble`, `mossy`, `plaster`, `planks` | walls of houses, castles and wall parts; `planks` also railings, balconies, door leaves, window frames and shutters; `stone` also door surrounds and sills | five colourways each |
 | `shingle` | roofs | red, slate blue, brown, green, terracotta |
+| `glass` | window panes: diagonal reflections and pen hatching | blue, teal, grey-blue, green, violet |
+| `lamp` | the warmly lit windows | amber, gold, orange, pale yellow, ruddy |
 
 **Random pick.** A model picks one variant per kind from its `seed` (same seed, same textures) and wears it on all its parts, so one tree has one kind of bark. The pick uses its own random stream, so it never changes a model's shape: every seed builds the same shapes as before textures existed. Pin variants with the `textures` option (unknown kinds and invalid numbers are ignored):
 ```js
@@ -117,7 +119,7 @@ The pool is also available for your own meshes (all exported from `src/index.js`
 
 | Export | |
 |---|---|
-| `TEXTURE_KINDS`, `TEXTURE_VARIANTS` | the 12 kind names and the number of variants (5) |
+| `TEXTURE_KINDS`, `TEXTURE_VARIANTS` | the 14 kind names and the number of variants (5) |
 | `pickVariant(kind, random?, allowed?)` | a variant number, weighted (autumn and teal foliage are rarer). Pass a seeded random function for a reproducible pick; `allowed` limits the choice to some variants |
 | `getTexture(kind, variant)` | the shared `Texture` (`null` without WebGL) |
 | `pooledMaterial(kind, variant, { color, flatShading, vertexColors, roughness })` | the shared `MeshStandardMaterial` wearing it; the same arguments always return the same instance |

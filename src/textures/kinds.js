@@ -309,6 +309,39 @@ const planks = wrap(/* glsl */ `
     col = mix(col, u_ink, clamp(pen * 0.9, 0.0, 1.0));
 `);
 
+// u_param: x diagonal reflection streaks (whole number), y pen hatch density
+const glass = wrap(/* glsl */ `
+    float N = u_param.x;
+    vec2 w = HD_warp(uv, 5.0, 0.012);
+    float d = HD_fbm(uv, vec2(3.0, 3.0));
+    vec3 col = HD_ramp(clamp(0.15 + 0.5 * d, 0.0, 1.0));
+
+    float s = (w.x + w.y) * N;
+    float band = 1.0 - smoothstep(0.06, 0.16, abs(fract(s) - 0.5));
+    float thin = 1.0 - smoothstep(0.015, 0.04, abs(fract(s * 2.0 + 0.25) - 0.5));
+    col = mix(col, HD_ramp(0.95), band * 0.55 + thin * 0.2);
+
+    float h = HD_hatch(w, u_param.y, -u_param.y, 0.1, 1.2) * smoothstep(0.55, 0.75, HD_noise(uv + 0.2, vec2(4.0)));
+    float edge = HD_line(abs(fract(s) - 0.5) - 0.16, 0.004, 0.006) * 0.35;
+    col = mix(col, u_ink, clamp(h * 0.3 + edge, 0.0, 1.0));
+`);
+
+// u_param: x diagonal glints (whole number). Warm lit pane: glowing blotches with a few pen scribbles.
+const lamp = wrap(/* glsl */ `
+    float N = u_param.x;
+    vec2 w = HD_warp(uv, 4.0, 0.02);
+    float d = HD_fbm(uv, vec2(2.0, 2.0));
+    vec3 col = HD_ramp(clamp(0.2 + 0.8 * d, 0.0, 1.0));
+
+    float s = (w.x - w.y) * N;
+    float glint = 1.0 - smoothstep(0.05, 0.13, abs(fract(s) - 0.5));
+    col = mix(col, HD_ramp(1.0), glint * 0.5);
+
+    float blot = smoothstep(0.55, 0.75, HD_noise(uv + 0.6, vec2(3.0)));
+    float h = HD_hatch(w, 6.0, 6.0, 0.1, 1.4) * blot;
+    col = mix(col, u_ink, clamp(h * 0.25, 0.0, 1.0));
+`);
+
 // u_param: x tiles per row, y rows (even), z roundness of the lower edge
 const shingle = wrap(/* glsl */ `
     float C = u_param.x;
@@ -376,4 +409,4 @@ const leaf = wrap(/* glsl */ `
     col = mix(col, u_ink, clamp(pen * 0.35 + ribPen * 0.55 + h * 0.22, 0.0, 1.0));
 `);
 
-export const BODIES = { bark, foliage, needles, rock, brick, stone, mossy, cobble, plaster, planks, shingle, leaf };
+export const BODIES = { bark, foliage, needles, rock, brick, stone, mossy, cobble, plaster, planks, shingle, glass, lamp, leaf };

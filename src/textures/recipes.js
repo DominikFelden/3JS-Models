@@ -152,6 +152,30 @@ export const RECIPES = {
       v(5, [0x80502a, 0xa0683c, 0xbd8650, 0xd8a672], 0x3a2212, 0, [4, 8, 0.3, 0]),
     ],
   },
+  glass: {
+    size: 256,
+    wash: { scale: 3, tint: 0.92, strength: 0.3 },
+    grain: 0.96,
+    variants: [
+      v(1, [0x1f3a52, 0x2f5a78, 0x4a7f9e, 0x9cc4d8], 0x0e1d2b, 0, [3, 5, 0, 0]),
+      v(2, [0x1d3f3f, 0x2d6360, 0x4a8c86, 0xa0d0c8], 0x0d2424, 0, [3, 6, 0, 0]),
+      v(3, [0x2a3346, 0x3f4d66, 0x5f6f8a, 0xaebdd2], 0x141a28, 0, [4, 5, 0, 0]),
+      v(4, [0x2b3d2c, 0x41603f, 0x62865a, 0xb2d0a2], 0x14221a, 0, [3, 4, 0, 0]),
+      v(5, [0x30264a, 0x4a3d72, 0x6c5e9a, 0xbab0dc], 0x181230, 0, [4, 6, 0, 0]),
+    ],
+  },
+  lamp: {
+    size: 256,
+    wash: { scale: 3, tint: 0.92, strength: 0.25 },
+    grain: 0.96,
+    variants: [
+      v(1, [0xa8641e, 0xd08a2c, 0xf0b44a, 0xfbe39a], 0x5a3510, 0, [3, 0, 0, 0]),
+      v(2, [0xb27a22, 0xd9a43a, 0xf2c85e, 0xfdf0b0], 0x5c4210, 0, [3, 0, 0, 0]),
+      v(3, [0xa84a1c, 0xd4702a, 0xf0984a, 0xfbd098], 0x5a2410, 0, [4, 0, 0, 0]),
+      v(4, [0x9a6a2a, 0xc4924a, 0xe3b870, 0xf8e0b4], 0x4c3416, 0, [3, 0, 0, 0]),
+      v(5, [0xa8421e, 0xd0622e, 0xee8a50, 0xfac28e], 0x581e10, 0, [4, 0, 0, 0]),
+    ],
+  },
   leaf: {
     size: 256,
     repeat: false,
@@ -193,6 +217,8 @@ export const MAPPING = {
   planks: { uv: 'face', tile: 2.5, shift: [1, 1] },
   mossy: { uv: 'face', tile: 2.5, shift: [1, 0] },
   shingle: { uv: 'face', tile: 1.6, shift: [1, 0] },
+  glass: { uv: 'face', tile: 1.2, shift: [1, 1] },
+  lamp: { uv: 'face', tile: 1.2, shift: [1, 1] },
   leaf: { uv: 'native', tile: 1, shift: [0, 0], double: true },
 };
 
