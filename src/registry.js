@@ -1,7 +1,7 @@
 import {
   SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
-  Wall, Door, Window, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
+  Wall, Door, Window, GlassDoor, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
   LEAF_TYPES,
 } from './index.js';
 
@@ -55,6 +55,7 @@ const unsorted = [
   { name: 'Wall (brick)', create: (o) => new Wall({ ...base(o), surface: 'brick' }) },
   { name: 'Window', create: (o) => new Window(base(o)) },
   { name: 'Window (arched)', create: (o) => new Window({ ...base(o), arched: true }) },
+  { name: 'Glass Door', create: (o) => new GlassDoor(base(o)) },
   { name: 'Castle', complexity: { max: MAX_CASTLE_COMPLEXITY, value: 3 }, create: (o) => new Castle(o) },
 ];
 

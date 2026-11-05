@@ -64,6 +64,19 @@ export class Window extends WorldModel {
   }
 }
 
+/** Tall glass door that leads out to a balcony, in a wall panel. */
+export class GlassDoor extends WorldModel {
+  constructor({ width = 0.7, height = 1.5, ...o } = {}) {
+    super('Glass Door', o);
+    const b = new MergeBuilder();
+    const w = width + 1.6, h = height + 0.8;
+    b.add(box(), this.surface('plaster'), { position: [0, h / 2, 0], scale: [w, h, 0.3] });
+    this.addWindow(b, [0, 0.05 + height / 2, 0.15], 0, width, height, { glassDoor: true });
+    b.build(this);
+    this.addShape('box', { size: [w, h, 0.3] }, [0, h / 2, 0], null, 'wall');
+  }
+}
+
 /** Round pillar with base, shaft and capital. */
 export class Column extends WorldModel {
   constructor({ height = 3, radius = 0.3, ...o } = {}) {
