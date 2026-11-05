@@ -351,11 +351,12 @@ export class WorldModel extends Group {
    * frame with mullions and a sill. `yaw` is the direction the window faces:
    * the outward normal is (sin yaw, 0, cos yaw), so yaw 0 faces +Z.
    * `position` is the centre of the window on the wall surface.
-   * opts: arched (round top, for castles), shutters (colour), sill (colour).
+   * opts: arched (round top, for castles), shutters (colour), sill (colour),
+   * glassDoor (tall double door: no sill, `position` is its centre).
    * About a quarter of the windows are lit warmly (random per window).
    */
   addWindow(builder, position, yaw, width = 0.6, height = 0.8, opts = {}) {
-    const { arched = false, shutters = null } = opts;
+    const { arched = false, shutters = null, glassDoor = false } = opts;
     const box = shared('window:box', () => new BoxGeometry(1, 1, 1));
     const disc = shared('window:disc', () => {
       const g = new CylinderGeometry(1, 1, 1, 10);
@@ -382,8 +383,8 @@ export class WorldModel extends Group {
       F(disc, glass, 0, ya, 0.065, r, r, 0.12);
     }
     F(box, wood, 0, position[1], 0.065, 0.035, height, 0.13);             // vertical mullion
-    F(box, wood, 0, position[1] - height * 0.1, 0.065, width, 0.035, 0.13); // transom
-    F(box, sill, 0, position[1] - height / 2 - 0.05, 0.1, width + 0.3, 0.07, 0.2);
+    F(box, wood, 0, position[1] - height * (glassDoor ? -0.25 : 0.1), 0.065, width, 0.035, 0.13); // transom
+    if (!glassDoor) F(box, sill, 0, position[1] - height / 2 - 0.05, 0.1, width + 0.3, 0.07, 0.2);
     if (shutters) {
       const sm = this.ownSurface('planks', shutters), sw = width * 0.5;
       for (const side of [-1, 1]) F(box, sm, side * (width / 2 + fw + sw / 2), yc, 0.05, sw, rh + fw * 2, 0.08);

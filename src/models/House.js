@@ -142,23 +142,32 @@ export class House extends WorldModel {
           // Keep the front-ground-floor windows clear of the door.
           if (f.yaw === 0 && r === 0 && Math.abs(u - doorX) < 1.2) continue;
           if (rnd() < 0.12) continue; // occasional gap = variety
-          this.addWindow(b, f.at(u, y), f.yaw, 0.55, 0.75, { shutters });
-          if (wantBalcony && r >= 1 && r === rows - 1 && rnd() < 0.5 && f.len / cols >= 1.5) balconies.push({ at: f.at(u, y), yaw: f.yaw });
+          const hasBalcony = wantBalcony && r >= 1 && r === rows - 1 && rnd() < 0.5 && f.len / cols >= 1.5;
+          if (hasBalcony) {
+            // Glass door: tall, its foot on the balcony floor.
+            const floorY = 0.4 + ((h - 0.4) / rows) * r + 0.05;
+            const doorH = 1.5;
+            this.addWindow(b, f.at(u, floorY + doorH / 2), f.yaw, 0.7, doorH, { glassDoor: true });
+            balconies.push({ at: f.at(u, floorY), yaw: f.yaw, cell: f.len / cols });
+          } else {
+            this.addWindow(b, f.at(u, y), f.yaw, 0.55, 0.75, { shutters });
+          }
         }
       }
     }
     const railMat = material(this._pick(BALCONY_WOOD), true);
-    for (const bal of balconies) this._balcony(b, bal.at, bal.yaw, railMat);
+    for (const bal of balconies) this._balcony(b, bal.at, bal.yaw, railMat, this.rand(1.0, Math.min(2.4, bal.cell - 0.1)), this.rand(0.5, 1.3));
     b.build(this);
   }
 
-  /** Balcony under the window at `at` (wall surface), facing `yaw`: slab, posts, rail, brackets. */
-  _balcony(b, at, yaw, mat) {
-    const bw = 1.3, depth = 0.7, y = at[1] - 0.5;
+  /** Balcony of width `bw` and depth `depth` in front of the glass door whose foot is at `at` (wall surface), facing `yaw`: slab, posts, rail, brackets. */
+  _balcony(b, at, yaw, mat, bw, depth) {
+    const y = at[1] - 0.04;
     const F = (u, yy, n, sx, sy, sz) => this._facePart(b, boxG(), mat, at, yaw, [u, yy, n], [sx, sy, sz]);
     F(0, y, depth / 2, bw, 0.08, depth);                       // floor slab
     for (const sx of [-1, 1]) F(sx * (bw / 2 - 0.04), y - 0.2, 0.1, 0.06, 0.3, 0.06); // wall brackets
-    for (let i = 0; i <= 4; i++) F(-bw / 2 + 0.04 + (i / 4) * (bw - 0.08), y + 0.3, depth - 0.04, 0.04, 0.55, 0.04); // front balusters
+    const n = Math.max(3, Math.round(bw / 0.28));
+    for (let i = 0; i <= n; i++) F(-bw / 2 + 0.04 + (i / n) * (bw - 0.08), y + 0.3, depth - 0.04, 0.04, 0.55, 0.04); // front balusters
     F(0, y + 0.58, depth - 0.04, bw, 0.05, 0.07);               // front rail
     for (const sx of [-1, 1]) {
       F(sx * (bw / 2 - 0.04), y + 0.3, depth / 2, 0.04, 0.55, 0.04);
