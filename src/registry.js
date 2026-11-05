@@ -1,5 +1,5 @@
 import {
-  SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree,
+  SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree, Forest,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
   Wall, Door, Window, GlassDoor, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
   LEAF_TYPES,
@@ -27,12 +27,20 @@ const LEAF_TYPE_PARAM = {
  * values are passed to `create` under their `key`. A colour with `value: null` is "auto" (not set).
  * (`seed` is undefined for a fresh random model, or a number to rebuild one.)
  */
+const ON_OFF = (key, label) => ({ key, label, type: 'select', value: 'on', options: [['on', 'On'], ['off', 'Off']] });
+const FOREST_PARAMS = [
+  { key: 'count', label: 'Trees', type: 'range', min: 50, max: 5000, step: 50, value: 1000 },
+  { key: 'area', label: 'Area (side)', type: 'range', min: 40, max: 300, step: 10, value: 160 },
+  ON_OFF('lod', 'Distance LOD'),
+  ON_OFF('shadows', 'Shadows'),
+];
 const base = (o) => ({ seed: o.seed, textures: o.textures });
 const unsorted = [
   { name: 'SimpleTree', create: () => new SimpleTree() },
   { name: 'PineTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new PineTree(o) },
   { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new OakTree(o) },
   { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, params: [LEAF_TYPE_PARAM, ...TREE_PARAMS], create: (o) => new LeafTree(o) },
+  { name: 'Forest (Leaf-Tree)', params: FOREST_PARAMS, create: (o) => new Forest({ seed: o.seed, count: o.count, area: o.area, lod: o.lod !== 'off', shadows: o.shadows !== 'off', treeOptions: { textures: o.textures } }) },
   { name: 'Bush', create: (o) => new Bush(o) },
   { name: 'Rock', create: (o) => new Rock(base(o)) },
   { name: 'House (cottage)', create: (o) => new House({ ...base(o), type: 'cottage' }) },

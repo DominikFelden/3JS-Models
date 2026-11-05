@@ -26,6 +26,7 @@
     #textureRows .thumb { flex: 0 1 52px; min-width: 0; aspect-ratio: 1; box-sizing: border-box; border: 3px solid transparent; border-radius: 4px; background: #ddd; cursor: pointer; }
     #textureRows .thumb.worn { border-color: #777; }
     #textureRows .thumb.pinned { border-color: #2a7de1; }
+    #stats { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); display: none; background: rgba(0,0,0,.6); color: #fff; font: 12px/1.4 ui-monospace, monospace; padding: 6px 8px; border-radius: 6px; white-space: pre; pointer-events: none; }
     #loading {
       position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
       background: #bfd9ee; color: #345; font-size: 20px; letter-spacing: .02em;
@@ -60,6 +61,7 @@
     <div style="margin-top:6px"><button id="reroll">Re-roll (new random seed)</button> <span id="seed"></span></div>
     <div style="margin-top:6px"><button id="paramsButton" style="display:none">Parameters…</button></div>
   </div>
+  <div id="stats"></div>
   <div id="loading">Painting textures… <span id="loadingPercent">0%</span></div>
   </div>
   <div id="dock"></div>
