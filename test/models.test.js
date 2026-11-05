@@ -333,3 +333,32 @@ test('Tree options: trunk size, leaf size, leaf type, colours and complexity 20'
   }
   assert.ok(new LeafTree({ seed: 4, leafSize: 2 }).leaves[0].length > new LeafTree({ seed: 4 }).leaves[0].length * 1.5);
 });
+
+import { Forest } from '../src/index.js';
+import { PerspectiveCamera } from 'three';
+
+test('Forest instances few variants, picks levels by distance and culls', () => {
+  const f = new Forest({ seed: 5, count: 800, area: 200, variants: 4 });
+  assert.strictEqual(f.getPlacements().length, 800);
+  assert.deepStrictEqual(new Forest({ seed: 5, count: 800, area: 200, variants: 4 }).getPlacements(), f.getPlacements());
+  const cam = new PerspectiveCamera(50, 1.5, 0.1, 1000);
+  cam.position.set(0, 5, 60);
+  cam.lookAt(0, 3, 0);
+  f.update(cam);
+  const { visible, levels, drawCalls, triangles } = f.stats;
+  assert.ok(visible > 0 && visible < 800, 'frustum culling');
+  assert.strictEqual(levels.reduce((a, b) => a + b, 0), visible);
+  assert.ok(levels.every((n) => n > 0), 'all levels used');
+  assert.ok(drawCalls <= 4 * 3 * 2);
+  f.lod = false;
+  f.invalidate();
+  f.update(cam);
+  assert.strictEqual(f.stats.visible, visible);
+  assert.ok(f.stats.triangles > triangles * 2, 'LOD saves triangles');
+  cam.position.set(0, 5, 1000);
+  cam.lookAt(0, 0, 0);
+  f.update(cam);
+  assert.strictEqual(f.stats.visible, 0, 'beyond maxDistance');
+  assert.ok(f.getColliders().length === 1);
+  f.dispose();
+});

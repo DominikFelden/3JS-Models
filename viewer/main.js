@@ -99,7 +99,7 @@ function show(reframe) {
   paramsButton.style.display = defs().length || usedTextures().length ? '' : 'none';
   if (modal.style.display === 'flex') renderTextures();
   if (!reframe) return;
-  const box = new Box3().setFromObject(current);
+  const box = current.viewBox ?? new Box3().setFromObject(current);
   const size = box.getSize(new Vector3()).length();
   const center = box.getCenter(new Vector3());
   controls.target.copy(center);
@@ -285,6 +285,16 @@ rerollButton.addEventListener('click', randomize);
 configureSlider();
 renderParams();
 
+const statsBox = document.getElementById('stats');
+/** FPS and draw load, shown for models that report `stats` (Forest) to judge performance on a phone. */
+function showStats(fps) {
+  const st = current?.stats;
+  statsBox.style.display = st ? 'block' : 'none';
+  if (!st) return;
+  const { calls, triangles } = renderer.info.render;
+  statsBox.textContent = `${fps} fps\ntrees ${st.visible}/${st.trees}\nLOD ${st.levels.join(' / ')}\ndraw calls ${calls}\ntriangles ${(triangles / 1000).toFixed(0)}k`;
+}
+
 /** Paint the shared texture pool with the viewer's own renderer (with progress), then show the first model. */
 async function start() {
   const percent = document.getElementById('loadingPercent');
@@ -294,9 +304,19 @@ async function start() {
     loading.remove();
   }
   show(true);
+  let frames = 0, since = performance.now(), fps = 0;
   renderer.setAnimationLoop(() => {
     controls.update();
+    current?.update?.(camera); // models with levels of detail (Forest) choose what to draw
     renderer.render(scene, camera);
+    frames++;
+    const now = performance.now();
+    if (now - since >= 500) {
+      fps = Math.round(frames * 1000 / (now - since));
+      frames = 0;
+      since = now;
+      showStats(fps);
+    }
   });
 }
 start();
