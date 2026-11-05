@@ -11,7 +11,7 @@ export {
   Leaf, OvalLeaf, TriangleLeaf, OakLeaf, MapleLeaf, BirchLeaf, WillowLeaf, GinkgoLeaf, CloverLeaf, AshLeaf, LEAF_TYPES,
 } from './models/Leaf.js';
 export {
-  Wall, Door, Window, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower, FlowerBud, LeafModel,
+  Wall, Door, Window, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
 } from './models/Parts.js';
 export {
   TEXTURE_KINDS, TEXTURE_VARIANTS, pickVariant, getTexture, pooledMaterial, preloadTextures, disposeTextures,
