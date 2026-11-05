@@ -1,8 +1,8 @@
 import {
   SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
-  Wall, Door, Window, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower, FlowerBud, LeafModel,
-  OvalLeaf, TriangleLeaf, LEAF_TYPES,
+  Wall, Door, Window, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
+  LEAF_TYPES,
 } from './index.js';
 
 /** Tree controls shown in the viewer's parameter modal (`key` = model option). Colours default to `null`: the picked texture's own colours. */
@@ -45,10 +45,7 @@ const unsorted = [
   { name: 'Door', create: (o) => new Door(base(o)) },
   { name: 'Door (arched)', create: (o) => new Door({ ...base(o), arched: true }) },
   { name: 'Flower', create: (o) => new Flower(base(o)) },
-  { name: 'Flower bud', create: (o) => new FlowerBud(base(o)) },
   { name: 'Grass', create: (o) => new Grass(base(o)) },
-  { name: 'Leaf (oval)', create: (o) => new LeafModel({ ...base(o), LeafClass: OvalLeaf }) },
-  { name: 'Leaf (triangle)', create: (o) => new LeafModel({ ...base(o), LeafClass: TriangleLeaf }) },
   { name: 'Railing', create: (o) => new Railing(base(o)) },
   { name: 'Roof (flat)', create: (o) => new Roof({ ...base(o), type: 'flat' }) },
   { name: 'Roof (gable)', create: (o) => new Roof({ ...base(o), type: 'gable' }) },

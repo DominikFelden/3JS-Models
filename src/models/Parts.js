@@ -1,6 +1,5 @@
 import { BoxGeometry, CylinderGeometry, ConeGeometry, SphereGeometry, ExtrudeGeometry, Shape, Vector2 } from 'three';
 import { Vector3 } from 'three';
-import { OvalLeaf } from './Leaf.js';
 import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
 
 /**
@@ -241,33 +240,5 @@ export class Flower extends WorldModel {
     b.add(ball(), material(0xe0a21b, true), { position: [0, height + 0.01, 0], scale: [0.04, 0.03, 0.04] });
     b.build(this);
     this.addShape('cylinder', { radius: 0.1, height }, [0, height / 2, 0], null, 'flower');
-  }
-}
-
-/** Closed flower bud on a short stem, with green sepals. */
-export class FlowerBud extends WorldModel {
-  constructor({ height = 0.4, color = null, ...o } = {}) {
-    super('FlowerBud', o);
-    const colour = color ?? [0xe8453c, 0xf2d13a, 0xd96bd0, 0xf5f5f0, 0x6b8cf0][this.seed % 5];
-    const b = new MergeBuilder();
-    const green = material(0x4c8f3a, true, true);
-    b.add(cyl(), green, { position: [0, height / 2, 0], scale: [0.012, height, 0.012] });
-    b.add(ball(), material(colour, true), { position: [0, height + 0.04, 0], scale: [0.035, 0.06, 0.035] });
-    b.add(cone(), green, { position: [0, height + 0.015, 0], scale: [0.045, 0.05, 0.045] });
-    b.add(ball(), green, { position: [0, height - 0.005, 0], scale: [0.03, 0.015, 0.03] });
-    b.build(this);
-    this.addShape('cylinder', { radius: 0.05, height }, [0, height / 2, 0], null, 'bud');
-  }
-}
-
-/** A single leaf on a short twig, so a `Leaf` class (OvalLeaf by default) can be inspected on its own. */
-export class LeafModel extends WorldModel {
-  constructor({ LeafClass = OvalLeaf, length = 0.8, width = 0.5, ...o } = {}) {
-    super('Leaf', o);
-    const b = new MergeBuilder();
-    b.add(cyl(), material(0x6e5233, true), { position: [0, 0.3, -0.15], scale: [0.015, 0.6, 0.015] });
-    new LeafClass(new Vector3(0, 0.6, 0), new Vector3(0, 0, 1), { length, width, droop: 0.5, tint: this.rand(0.9, 1.1) }).place(b, this.surface('leaf'));
-    b.build(this);
-    this.addShape('sphere', { radius: length / 2 }, [0, 0.55, length / 2], null, 'leaf');
   }
 }

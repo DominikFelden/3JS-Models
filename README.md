@@ -23,7 +23,7 @@ scene.add(new SimpleTree());
 | `House` | `type` (`'cottage'`, `'longhouse'`, `'towerhouse'`), `seed` | Box walls, pyramid or gable roof, door, windows on all walls | `body`, `roof` |
 | `Castle` | `complexity` 0-5 (default 1), `seed` | Keep, curtain walls, towers, gates, halls, windows (see below) | `keep`, `tower`, `roof`, `wall`, `hall`, `turret` |
 | `Wall`, `Door`, `Window`, `Column`, `Roof` (`type`: gable/hip/flat), `Chimney`, `Stairs`, `Railing`, `Balcony` | size options, `seed` | Building parts, each a standalone model usable as a building block | one shape each |
-| `Grass`, `BirdsNest`, `Flower`, `FlowerBud`, `LeafModel` | `seed` | Plant parts (`LeafModel` shows an `OvalLeaf`/`TriangleLeaf`) | one shape each |
+| `Grass`, `BirdsNest`, `Flower` | `seed` | Plant parts | one shape each |
 
 Tree style options (all trees, optional, otherwise seed-driven): `trunkHeight`, `trunkThickness`, `leafSize` (factors, 1 = default) and `trunkColor`, `leafColor` (any three.js colour; they recolour the bark / foliage texture, leave them out to keep the colours of the picked texture). `leafType` (key of `LEAF_TYPES`) is for `LeafTree`. Above complexity 5 branching generations grow slowly (20 = 8 generations); extra complexity adds more limbs and foliage.
 
