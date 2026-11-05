@@ -25,7 +25,19 @@ scene.add(new SimpleTree());
 | `Wall`, `Door`, `Window`, `GlassDoor` ("Glass Door", tall window leading to a balcony), `Column`, `Roof` (`type`: gable/hip/flat), `Chimney`, `Stairs`, `Railing`, `Balcony` | size options, `seed` | Building parts, each a standalone model usable as a building block | one shape each |
 | `Grass`, `BirdsNest`, `Flower` | `seed` | Plant parts | one shape each |
 
-`Forest` (`src/Forest.js`) builds hundreds or thousands of `LeafTree`s cheaply: a few seed variants, each at several levels of detail (`FOREST_LEVELS`), drawn as `InstancedMesh`es, so draw calls depend on `variants * levels * 2`, not on the tree count. Call `forest.update(camera)` once per frame: it chooses the level per tree by distance (`lodDistances`, default 25 / 70), culls trees outside the view or beyond `maxDistance`, and only lets the nearest level cast shadows. Options: `count`, `area` (side of the square), `variants`, `levels`, `lodDistances`, `lod`, `maxDistance`, `shadows`, `treeOptions` (passed to every tree), `heightAt(x, z)`, `minScale`/`maxScale`. `forest.stats` reports visible trees, trees per level, triangles and draw calls; `getPlacements()` lists the trees for your own collision code.
+`Forest` (`src/Forest.js`) builds thousands of `LeafTree`s cheaply enough to fly over on a phone. Only the nearest trees are real 3D trees; farther away the forest is an illusion, in tiers chosen per tree by its distance:
+
+| Tier | Distance (default) | What is drawn | Cost |
+|---|---|---|---|
+| 3D levels | 0-25 / 25-50 / 50-80 | a few seed `variants`, each at several levels of detail (`FOREST_LEVELS`), as `InstancedMesh`es; only the nearest level casts shadows | `variants * levels * 2` draw calls, triangles per tree |
+| Impostors | 80-300 | one camera-facing card per tree showing a picture of its variant, baked at start-up from 8 directions around it and 4 heights (side to straight above) into an atlas with baked normals, so the cards are lit like the trees | 1 draw call, 2 triangles per tree |
+| Canopy | 300 and beyond | one surface over the whole forest: a dome over every crown, coloured like its tree, wearing the hand-drawn `canopy` texture (treetops seen from above) | 1 draw call, independent of the tree count |
+
+Neighbouring tiers cross-fade with a screen-space dither over a band of `fade` (12 %) of the boundary distance, so trees dissolve into their next form instead of popping. Trees are sorted into square chunks (`chunkSize`) that are culled as a whole before single trees are tested. Call `forest.update(camera)` once per frame; it does all of this on the CPU in well under a millisecond for 40 000 trees.
+
+Options: `count`, `area` (side of the square), `variants`, `levels`, `lodDistances` (default `[25, 50]`), `lod`, `impostors`, `impostorDistance` (80), `impostorResolution` (pixels per picture, 128), `canopy`, `canopyDistance` (300), `maxDistance` (default unlimited), `fade`, `detail`, `chunkSize`, `shadows`, `textures` (pin the `canopy` variant), `treeOptions` (passed to every tree), `heightAt(x, z)`, `minScale`/`maxScale`, `renderer` (bake impostors with your renderer instead of a private one). Without WebGL (Node) nothing is baked and impostors are plain cards.
+
+**Keeping the frame rate.** `detail` (0.2-1) scales the 3D and impostor distances; call `forest.adaptDetail(fps)` about twice a second with the measured frame rate (target 50 fps by default) and it lowers `detail` while the device struggles and raises it again when there is headroom. `forest.ranges()` returns the current distances of every tier. `forest.stats` reports 3D trees, trees per level, impostors, whether the canopy is drawn, triangles, draw calls, `detail` and chunks; `getPlacements()` lists the trees for your own collision code. On phones also cap the pixel ratio (the viewer uses 1.5).
 
 Tree style options (all trees, optional, otherwise seed-driven): `trunkHeight`, `trunkThickness`, `leafSize` (factors, 1 = default) and `trunkColor`, `leafColor` (any three.js colour; they recolour the bark / foliage texture, leave them out to keep the colours of the picked texture). `leafType` (key of `LEAF_TYPES`) is for `LeafTree`. Above complexity 5 branching generations grow slowly (20 = 8 generations); extra complexity adds more limbs and foliage.
 
@@ -87,7 +99,7 @@ Proportions, wall and roof colours and window layout vary per instance. The door
 Trees, houses and castles own merged geometries (shared unit geometries are never freed). Call `model.dispose()` when you permanently remove one, e.g. when the viewer rebuilds a model. Not calling it only leaks memory; it never breaks rendering. Textures and their materials are shared by all models and are not freed by `dispose()`; call `disposeTextures()` when a whole world is discarded.
 
 ## Textures
-Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 14 kinds with 5 variants each, every one a seamless 256 × 256 picture with ink outlines, hatching, a watercolour wash and paper grain. The pool needs about 21 MB of GPU memory however many models you create, and all models wearing a variant share one material.
+Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 15 kinds with 5 variants each, every one a seamless 256 × 256 picture with ink outlines, hatching, a watercolour wash and paper grain. The pool needs about 22.5 MB of GPU memory however many models you create, and all models wearing a variant share one material.
 
 | Kind | Painted on | The 5 variants |
 |---|---|---|
@@ -95,6 +107,7 @@ Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 1
 | `foliage` | oak crowns, bushes, `SimpleTree` | light green, dark green, olive, autumn orange (rarer), teal (rarer) |
 | `needles` | pine needles | five conifer greens (one rarer) |
 | `leaf` | `LeafTree` leaves and leaf models (one picture per leaf, not tiled) | like `foliage` |
+| `canopy` | far `Forest` canopy: a closed roof of treetops seen from above, lit from one side, shaded between crowns | like `foliage` |
 | `rock` | rocks | grey, sandstone, slate, charcoal, greenish |
 | `brick`, `stone`, `cobble`, `mossy`, `plaster`, `planks` | walls of houses, castles and wall parts; `planks` also railings, balconies, door leaves, window frames and shutters; `stone` also door surrounds and sills | five colourways each |
 | `shingle` | roofs | red, slate blue, brown, green, terracotta |
@@ -121,7 +134,7 @@ The pool is also available for your own meshes (all exported from `src/index.js`
 
 | Export | |
 |---|---|
-| `TEXTURE_KINDS`, `TEXTURE_VARIANTS` | the 14 kind names and the number of variants (5) |
+| `TEXTURE_KINDS`, `TEXTURE_VARIANTS` | the 15 kind names and the number of variants (5) |
 | `pickVariant(kind, random?, allowed?)` | a variant number, weighted (autumn and teal foliage are rarer). Pass a seeded random function for a reproducible pick; `allowed` limits the choice to some variants |
 | `getTexture(kind, variant)` | the shared `Texture` (`null` without WebGL) |
 | `pooledMaterial(kind, variant, { color, flatShading, vertexColors, roughness })` | the shared `MeshStandardMaterial` wearing it; the same arguments always return the same instance |
@@ -179,7 +192,7 @@ Foliage shapes are bounding shapes of the crown; whether to collide with them is
 npm install
 npm run dev
 ```
-Open the printed URL and pick a model in the menu. While the shared textures are painted at start-up a progress overlay is shown. For models that support it a **Complexity slider** appears (trees: up to 20) and models with parameters or textures get a **Parameters…** modal: trunk height/thickness, leaf size, leaf type (Leaf-Tree) and trunk/leaf colour pickers (*auto* keeps the colours of the picked texture), and a **Textures** section that lists the variants of every kind the model uses; click a thumbnail to pin it to this model, click it again to return to the random pick. Tick *Show below* to pin a control under the 3D view. Re-roll randomizes all of them (and unpins the textures). Sliders keep the current seed; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. The **Forest (Leaf-Tree)** entry shows a live fps / draw call / triangle overlay and has *Trees*, *Area*, *Distance LOD* and *Shadows* controls, to check performance in a (mobile) browser. New models are registered in `src/registry.js`.
+Open the printed URL and pick a model in the menu. While the shared textures are painted at start-up a progress overlay is shown. For models that support it a **Complexity slider** appears (trees: up to 20) and models with parameters or textures get a **Parameters…** modal: trunk height/thickness, leaf size, leaf type (Leaf-Tree) and trunk/leaf colour pickers (*auto* keeps the colours of the picked texture), and a **Textures** section that lists the variants of every kind the model uses; click a thumbnail to pin it to this model, click it again to return to the random pick. Tick *Show below* to pin a control under the 3D view. Re-roll randomizes all of them (and unpins the textures). Sliders keep the current seed; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. The **Forest (Leaf-Tree)** and **Forest (fly-over)** (30 000 trees on 1 km², seen from high above) entries show a live overlay (fps, 3D trees, trees per level, impostors, canopy, detail, draw calls, triangles) and have *Trees*, *Area*, *Distance LOD*, *Impostors*, *Canopy*, *Shadows* and *Auto detail* (`adaptDetail`) controls, to check performance in a (mobile) browser. On touch devices the viewer renders at most 1.5 pixels per CSS pixel. New models are registered in `src/registry.js`.
 
 ## Tests
 `npm test`

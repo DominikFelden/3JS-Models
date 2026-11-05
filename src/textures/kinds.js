@@ -409,4 +409,76 @@ const leaf = wrap(/* glsl */ `
     col = mix(col, u_ink, clamp(pen * 0.35 + ribPen * 0.55 + h * 0.22, 0.0, 1.0));
 `);
 
-export const BODIES = { bark, foliage, needles, rock, brick, stone, mossy, cobble, plaster, planks, shingle, glass, lamp, leaf };
+// A forest seen from above (the far canopy layer of `Forest`). u_param: x tree crowns
+// across the tile. Crowns sit on a jittered grid; the tallest one covering a pixel wins
+// and taller neighbours cast their shadow away from the sun. Inside a crown, small leaf
+// lobes (periodic Worley cells) catch the light, with pen rims and hatching in the shade.
+const canopy = wrap(/* glsl */ `
+    float N = u_param.x;
+    vec2 per = vec2(N);
+    vec2 sun = vec2(-0.55, 0.83);
+    vec2 w = HD_warp(uv, 6.0, 0.03);
+    vec2 p = w * N;
+    vec2 ip = floor(p);
+    vec2 fp = fract(p);
+    float wash = HD_fbm(uv, vec2(3.0));
+
+    float topH = -1.0;
+    float topR = 1.0;
+    float topD = 0.0;
+    vec2 topV = vec2(0.0);
+    float topId = 0.0;
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 g = vec2(float(i), float(j));
+        vec2 cell = mod(ip + g, per);
+        vec3 hh = vec3(HD_h12(cell + u_seed * 5.1 + 0.3), HD_h12(cell + u_seed * 2.3 + 1.7), HD_h12(cell + u_seed * 1.1 + 8.1));
+        vec2 r = fp - (g + 0.2 + 0.6 * HD_h22(cell + u_seed * 3.7));
+        float rad = 0.52 + 0.22 * hh.y;
+        float d = HD_blob(r, hh);
+        if (d < rad && hh.x > topH) {
+          topH = hh.x;
+          topR = rad;
+          topD = d;
+          topV = r;
+          topId = hh.z;
+        }
+      }
+    }
+    float shadow = 0.0;
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 g = vec2(float(i), float(j));
+        vec2 cell = mod(ip + g, per);
+        vec3 hh = vec3(HD_h12(cell + u_seed * 5.1 + 0.3), HD_h12(cell + u_seed * 2.3 + 1.7), HD_h12(cell + u_seed * 1.1 + 8.1));
+        vec2 r = fp - (g + 0.2 + 0.6 * HD_h22(cell + u_seed * 3.7));
+        if (hh.x > topH) {
+          shadow = max(shadow, 1.0 - smoothstep(-0.04, 0.14, HD_blob(r + sun * 0.2, hh) - (0.52 + 0.22 * hh.y)));
+        }
+      }
+    }
+
+    vec3 col = HD_ramp(0.02 + 0.08 * wash);
+    if (topH >= 0.0) {
+      vec2 n = topV / topR;
+      float lit = dot(n, sun);
+      vec2 lp = w * N * 3.0;
+      vec4 lv = HD_voro(lp, per * 3.0, 1.0);
+      vec2 ld = HD_voroDir(lp, per * 3.0, 1.0);
+      float lobeLit = dot(normalize(-ld + vec2(0.0001)), sun) * smoothstep(0.05, 0.4, lv.x);
+      float t0 = 0.3 + 0.3 * topId + 0.2 * (wash - 0.5);
+      col = HD_ramp(clamp(t0 + 0.3 * lit + 0.16 * lobeLit, 0.0, 1.0));
+      col *= 1.0 - 0.25 * HD_line(lv.y - lv.x, 0.015, 0.05);
+
+      float shade = smoothstep(-0.1, 0.8, -lit);
+      float rim = topR - topD;
+      float hatch = HD_hatch(w, N * 4.0, N * 5.0, 0.22, 0.7) * shade * smoothstep(0.08, 0.3, rim);
+      float lw = 0.03 + 0.06 * shade;
+      float line = (1.0 - smoothstep(lw * 0.55, lw, rim)) * (0.35 + 0.65 * shade)
+        * (0.7 + 0.3 * HD_noise(uv, vec2(14.0)));
+      col = mix(col, u_ink, clamp(line * 0.85 + hatch * 0.25, 0.0, 1.0));
+    }
+    col *= 1.0 - 0.45 * shadow;
+`);
+
+export const BODIES = { bark, foliage, needles, rock, brick, stone, mossy, cobble, plaster, planks, shingle, glass, lamp, leaf, canopy };

@@ -96,19 +96,26 @@ function release() {
 }
 
 /**
- * Bake all variants of a surface kind. Uses `renderer` when given (the host's
- * own WebGLRenderer, its state is restored), otherwise a private offscreen
- * renderer that is kept for a moment (several kinds are usually baked in a
- * row) and then released.
- * @returns {{texture: DataTexture, mean: number[]}[]}
+ * Run `fn(renderer)` with `renderer` when given (the host's own WebGLRenderer;
+ * `fn` must restore its state), otherwise with a private offscreen renderer
+ * that is kept for a moment (bakes usually come in a row) and then released.
+ * Results must be read back to the CPU: the private context goes away.
  */
-export function bakeKind(kind, renderer = null) {
-  if (renderer) return render(renderer, kind);
+export function withBakeRenderer(renderer, fn) {
+  if (renderer) return fn(renderer);
   clearTimeout(releaseTimer);
   priv ??= createRenderer();
   try {
-    return render(priv, kind);
+    return fn(priv);
   } finally {
     releaseTimer = setTimeout(release, 1500);
   }
+}
+
+/**
+ * Bake all variants of a surface kind (see `withBakeRenderer` for `renderer`).
+ * @returns {{texture: DataTexture, mean: number[]}[]}
+ */
+export function bakeKind(kind, renderer = null) {
+  return withBakeRenderer(renderer, (r) => render(r, kind));
 }
