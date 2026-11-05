@@ -190,6 +190,21 @@ export const RECIPES = {
       v(5, [0x1f4a4a, 0x2f7068, 0x4a9a82, 0x82c4a4], 0x10302e, 0, [5, 0, 0, 0]),
     ],
   },
+  // Treetops seen from above, for the far canopy layer of a Forest. Same colourways as
+  // `leaf` / `foliage`, so variant i matches the trees wearing leaf variant i.
+  canopy: {
+    size: 256,
+    wash: { scale: 3, tint: 0.85, strength: 0.45 },
+    grain: 0.93,
+    weights: [1, 1, 1, 0.5, 0.35],
+    variants: [
+      v(1, [0x2f5d2a, 0x4a8a37, 0x6fb04a, 0xa2d468], 0x1d3a1c, 0, [5, 0, 0, 0]),
+      v(2, [0x1f3f2b, 0x2f5e3b, 0x43804a, 0x6aa862], 0x12261a, 0, [5, 0, 0, 0]),
+      v(3, [0x4b5a22, 0x72822f, 0x9aab3e, 0xc9d160], 0x2c3512, 0, [6, 0, 0, 0]),
+      v(4, [0x7a2f1a, 0xb5502a, 0xdd8a35, 0xf0c25a], 0x4a1a0e, 0, [5, 0, 0, 0]),
+      v(5, [0x1f4a4a, 0x2f7068, 0x4a9a82, 0x82c4a4], 0x10302e, 0, [6, 0, 0, 0]),
+    ],
+  },
 };
 
 export const KINDS = Object.keys(RECIPES);
@@ -220,6 +235,7 @@ export const MAPPING = {
   glass: { uv: 'face', tile: 1.2, shift: [1, 1] },
   lamp: { uv: 'face', tile: 1.2, shift: [1, 1] },
   leaf: { uv: 'native', tile: 1, shift: [0, 0], double: true },
+  canopy: { uv: 'world', tile: 30, shift: [1, 1] },
 };
 
 const channel = (hex, shift) => ((hex >> shift) & 255) / 255;

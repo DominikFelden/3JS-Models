@@ -9,10 +9,12 @@ import { preloadTextures, getTexture, TEXTURE_VARIANTS } from '../src/textures/i
 
 const scene = new Scene();
 scene.background = new Color(0xbfd9ee);
-scene.fog = new Fog(0xbfd9ee, 80, 300);
-const camera = new PerspectiveCamera(50, 1, 0.1, 1000);
+const FOG = [80, 300]; // default; big scenes (forests) ask for more with `fog` in the registry
+scene.fog = new Fog(0xbfd9ee, ...FOG);
+const camera = new PerspectiveCamera(50, 1, 0.1, 6000);
 const renderer = new WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// Phones have very dense screens; 1.5 pixels per CSS pixel looks the same and saves a lot of fill rate.
+renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = PCFSoftShadowMap;
 renderer.toneMapping = ACESFilmicToneMapping;
@@ -40,7 +42,7 @@ Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, n
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.04;
 scene.add(sun);
-const ground = new Mesh(new CircleGeometry(250, 64), new MeshStandardMaterial({ color: 0x6a8f48, roughness: 1 }));
+const ground = new Mesh(new CircleGeometry(3000, 96), new MeshStandardMaterial({ color: 0x6a8f48, roughness: 1 }));
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
@@ -92,7 +94,8 @@ function show(reframe) {
     current.dispose?.(); // free this model's own geometries (shared ones stay)
   }
   // No seed given -> every build is a new random variation.
-  current = entry.create({ complexity: Number(slider.value), seed, textures: { ...pins() }, ...values() });
+  current = entry.create({ complexity: Number(slider.value), seed, textures: { ...pins() }, renderer, ...values() });
+  [scene.fog.near, scene.fog.far] = entry.fog ?? FOG;
   seed = current.seed; // later changes (sliders) modify this very model; Re-roll picks a new seed
   seedLabel.textContent = current.seed !== undefined ? `seed ${current.seed}` : '';
   scene.add(current);
@@ -292,7 +295,7 @@ function showStats(fps) {
   statsBox.style.display = st ? 'block' : 'none';
   if (!st) return;
   const { calls, triangles } = renderer.info.render;
-  statsBox.textContent = `${fps} fps\ntrees ${st.visible}/${st.trees}\nLOD ${st.levels.join(' / ')}\ndraw calls ${calls}\ntriangles ${(triangles / 1000).toFixed(0)}k`;
+  statsBox.textContent = `${fps} fps\n3D trees ${st.visible}/${st.trees}\nLOD ${st.levels.join(' / ')}\nimpostors ${st.impostors}\ncanopy ${st.canopy ? 'on' : 'off'}\ndetail ${Math.round(st.detail * 100)}%\ndraw calls ${calls}\ntriangles ${(triangles / 1000).toFixed(0)}k`;
 }
 
 /** Paint the shared texture pool with the viewer's own renderer (with progress), then show the first model. */
@@ -315,6 +318,7 @@ async function start() {
       fps = Math.round(frames * 1000 / (now - since));
       frames = 0;
       since = now;
+      if (current?.autoDetail) current.adaptDetail(fps); // forests: fewer 3D trees while the frame rate is low
       showStats(fps);
     }
   });

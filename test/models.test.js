@@ -345,20 +345,93 @@ test('Forest instances few variants, picks levels by distance and culls', () => 
   cam.position.set(0, 5, 60);
   cam.lookAt(0, 3, 0);
   f.update(cam);
-  const { visible, levels, drawCalls, triangles } = f.stats;
+  const { visible, levels, drawCalls, triangles, impostors } = f.stats;
   assert.ok(visible > 0 && visible < 800, 'frustum culling');
-  assert.strictEqual(levels.reduce((a, b) => a + b, 0), visible);
+  const drawn = levels.reduce((a, b) => a + b, 0);
+  assert.ok(drawn >= visible && drawn < visible * 1.5, 'a tree is in two levels only inside a fade band');
   assert.ok(levels.every((n) => n > 0), 'all levels used');
-  assert.ok(drawCalls <= 4 * 3 * 2);
+  assert.ok(impostors > 0, 'farther trees are impostors');
+  assert.ok(drawCalls <= 4 * 3 * 2 + 2);
   f.lod = false;
   f.invalidate();
   f.update(cam);
   assert.strictEqual(f.stats.visible, visible);
   assert.ok(f.stats.triangles > triangles * 2, 'LOD saves triangles');
-  cam.position.set(0, 5, 1000);
-  cam.lookAt(0, 0, 0);
-  f.update(cam);
-  assert.strictEqual(f.stats.visible, 0, 'beyond maxDistance');
   assert.ok(f.getColliders().length === 1);
   f.dispose();
+});
+
+test('Forest tiers: 3D levels, impostors, canopy, maxDistance', () => {
+  const f = new Forest({ seed: 2, count: 600, area: 300, variants: 3 });
+  const R = f.ranges();
+  assert.deepStrictEqual(R.levels, [[null, 25], [25, 50], [50, 80]]);
+  assert.deepStrictEqual(R.impostors, [80, 300]);
+  assert.deepStrictEqual(R.canopy, [300, Infinity]);
+  const cam = new PerspectiveCamera(50, 1.5, 0.1, 5000);
+
+  // Every tree in the view is drawn by the tier its distance falls in (a brute-force check).
+  cam.position.set(-20, 8, 140);
+  cam.lookAt(0, 0, 0);
+  f.update(cam);
+  const all = f.getPlacements().map((t) => Math.hypot(t.x - cam.position.x, t.y - cam.position.y, t.z - cam.position.z));
+  const band = (d, lo, hi) => d >= lo * (1 - f.fade / 2) && d < hi * (1 + f.fade / 2);
+  assert.ok(f.stats.impostors > 0 && f.stats.visible > 0);
+  assert.ok(f.stats.impostors <= all.filter((d) => band(d, 80, 300)).length);
+  assert.ok(f.stats.visible <= all.filter((d) => d < 80 * (1 + f.fade / 2)).length);
+  assert.strictEqual(f.impostorMesh.geometry.instanceCount ?? f.impostorMesh.geometry.attributes.iPos.count, 600);
+
+  // High above: everything is far, so only the canopy is drawn (one draw call).
+  cam.position.set(0, 500, 0);
+  cam.lookAt(0, 0, -50);
+  f.update(cam);
+  assert.strictEqual(f.stats.visible, 0);
+  assert.strictEqual(f.stats.impostors, 0);
+  assert.strictEqual(f.stats.canopy, true);
+  assert.strictEqual(f.stats.drawCalls, 1);
+
+  // Without impostors the 3D trees reach the canopy; without the canopy nothing is drawn beyond maxDistance.
+  const g = new Forest({ seed: 2, count: 600, area: 300, variants: 3, impostors: false, canopy: false, maxDistance: 120 });
+  assert.deepStrictEqual(g.ranges().levels.at(-1), [50, 120]);
+  assert.strictEqual(g.ranges().canopy, null);
+  cam.position.set(0, 5, 1000);
+  cam.lookAt(0, 0, 0);
+  g.update(cam);
+  assert.strictEqual(g.stats.visible + g.stats.impostors, 0, 'beyond maxDistance');
+  assert.strictEqual(g.stats.canopy, false);
+  f.dispose();
+  g.dispose();
+});
+
+test('Forest detail scales the near tiers and adapts to the frame rate', () => {
+  const f = new Forest({ seed: 3, count: 100, area: 60, variants: 2 });
+  f.detail = 0.5;
+  assert.deepStrictEqual(f.ranges().levels, [[null, 12.5], [12.5, 25], [25, 40]]);
+  assert.deepStrictEqual(f.ranges().impostors, [40, 300]);
+  f.detail = 0;
+  assert.strictEqual(f.detail, 0.2, 'clamped');
+  f.detail = 1;
+  for (let i = 0; i < 5; i++) f.adaptDetail(20);
+  assert.ok(f.detail < 0.6);
+  const low = f.detail;
+  for (let i = 0; i < 5; i++) f.adaptDetail(60);
+  assert.ok(f.detail > low && f.detail <= 1);
+  f.adaptDetail(50);
+  assert.ok(f.detail > low, 'steady near the target');
+  f.dispose();
+});
+
+test('Forest canopy covers the trees at crown height and offers a canopy texture', () => {
+  const f = new Forest({ seed: 4, count: 400, area: 120, variants: 2 });
+  const pos = f.canopyMesh.geometry.attributes.position;
+  let top = -Infinity, low = Infinity;
+  for (let i = 0; i < pos.count; i++) { top = Math.max(top, pos.getY(i)); low = Math.min(low, pos.getY(i)); }
+  const tallest = Math.max(...f.getPlacements().map((t) => t.scale)) * Math.max(...f._treeVariants.map((v) => v.top));
+  assert.ok(top > tallest * 0.6 && top <= tallest + 1e-6, 'canopy reaches the crowns');
+  assert.ok(low < 0.5, 'and drops to the ground in clearings / at the edge');
+  const tv = f.textureVariants();
+  assert.ok(Number.isInteger(tv.canopy) && Number.isInteger(tv.leaf) && Number.isInteger(tv.bark));
+  const pinned = new Forest({ seed: 4, count: 50, area: 60, textures: { canopy: 3 } });
+  assert.strictEqual(pinned.textureVariants().canopy, 3);
+  f.dispose();
+  pinned.dispose();
 });

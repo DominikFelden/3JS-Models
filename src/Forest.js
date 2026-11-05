@@ -1,11 +1,17 @@
-import { InstancedMesh, Matrix4, Quaternion, Vector3, Box3, Frustum, DynamicDrawUsage } from 'three';
-import { WorldModel, mulberry32 } from './WorldModel.js';
+import { InstancedMesh, Matrix4, Quaternion, Vector3, Box3, Frustum, DynamicDrawUsage, Color } from 'three';
+import { WorldModel } from './WorldModel.js';
 import { LeafTree } from './models/LeafTree.js';
+import { canBake } from './textures/bake.js';
+import { TEXTURE_VARIANTS } from './textures/pool.js';
+import { fallbackColor } from './textures/recipes.js';
+import { fadeMaterial, rangeUniform, setRange, inRange } from './forest/fade.js';
+import { bakeImpostors, createImpostors } from './forest/impostors.js';
+import { canopyGeometry, createCanopy } from './forest/canopy.js';
 
 /**
- * Detail levels of a forest tree. Level 0 is used close to the camera, the
- * last one far away. Lower complexity means far fewer triangles; the leaves
- * grow (`leafSize`) so the crown keeps its mass.
+ * Detail levels of the real (3D) forest trees. Level 0 is used close to the
+ * camera, the last one up to `impostorDistance`. Lower complexity means far
+ * fewer triangles; the leaves grow (`leafSize`) so the crown keeps its mass.
  */
 export const FOREST_LEVELS = [
   { complexity: 4, leafSize: 1 },
@@ -14,6 +20,7 @@ export const FOREST_LEVELS = [
 ];
 
 const _m = new Matrix4();
+const _inv = new Matrix4();
 const _q = new Quaternion();
 const _p = new Vector3();
 const _s = new Vector3();
@@ -22,51 +29,83 @@ const _cam = new Vector3();
 const _frustum = new Frustum();
 const _pv = new Matrix4();
 const _yAxis = new Vector3(0, 1, 0);
+const _sphere = { center: new Vector3(), radius: 0 };
 
 const trianglesOf = (mesh) => (mesh.geometry.index ? mesh.geometry.index.count : mesh.geometry.attributes.position.count) / 3;
 
+/** Shortest and longest distance from point `p` to box `b`. */
+function boxDistances(b, p) {
+  const dx = Math.max(b.min.x - p.x, 0, p.x - b.max.x), dy = Math.max(b.min.y - p.y, 0, p.y - b.max.y), dz = Math.max(b.min.z - p.z, 0, p.z - b.max.z);
+  const fx = Math.max(Math.abs(p.x - b.min.x), Math.abs(p.x - b.max.x)), fy = Math.max(Math.abs(p.y - b.min.y), Math.abs(p.y - b.max.y)), fz = Math.max(Math.abs(p.z - b.min.z), Math.abs(p.z - b.max.z));
+  return [Math.hypot(dx, dy, dz), Math.hypot(fx, fy, fz)];
+}
+
 /**
- * A forest of `LeafTree`s that stays cheap for hundreds or thousands of trees.
+ * A forest of `LeafTree`s you can fly over: the illusion of a huge forest,
+ * with real trees only where the player can see the difference.
  *
- *  - A handful of tree VARIANTS (different seeds) are built once, each at
- *    several levels of detail (`levels`). Every tree of the forest is just a
- *    position, yaw and scale of one variant.
- *  - Each variant/level/material is ONE `InstancedMesh`, so the draw calls
- *    depend on `variants * levels * 2`, not on the number of trees.
- *  - `update(camera)` (call it once per frame) picks the level per tree from
- *    its distance (`lodDistances`), skips trees outside the view and beyond
- *    `maxDistance`, and rewrites the instance matrices. It does nothing while
- *    camera and forest stay unchanged.
+ * Tiers by distance from the camera (all distances in world units):
+ *  1. 3D trees: a handful of tree VARIANTS (different seeds), each built at
+ *     several `levels` of detail and drawn as `InstancedMesh`es. Only these
+ *     cast shadows (the nearest level).                    0 .. impostorDistance
+ *  2. Impostors: pictures of the variants taken from 8 x 4 directions (also
+ *     from above), one camera-facing quad per tree, all trees in ONE draw
+ *     call. Lit like the real trees (baked normals).       .. canopyDistance
+ *  3. Canopy: a single mesh following the crowns (domes per tree) wearing
+ *     the hand-drawn `canopy` texture (treetops seen from above). .. maxDistance
+ * Between tiers trees dissolve into each other (dithered over `fade` of the
+ * distance) instead of popping.
+ *
+ * The forest is split into square chunks (`chunkSize`): `update(camera)` only
+ * looks at single trees in chunks near the camera, so the CPU cost depends on
+ * what is near, not on the size of the forest. Impostors and canopy never
+ * change on the CPU. Call `update(camera)` once per frame; it does nothing
+ * while camera and forest stay put.
  *
  * Options (all optional):
  *  - count: number of trees (default 1000), area: side of the square area, centred on the model (default 160; `size` stays the uniform scale of every model)
  *  - variants: distinct trees built (default 6), seed (as for every model: same seed, same forest)
  *  - levels: [{complexity, leafSize}] detail levels, best first (default `FOREST_LEVELS`)
- *  - lodDistances: distances where the next level starts (default [25, 70]); `lod: false` keeps level 0 everywhere
- *  - maxDistance: trees further away are not drawn (default 250)
- *  - shadows: only the nearest level casts shadows (default true)
+ *  - lodDistances: distances where the next 3D level starts (default [25, 50]); `lod: false` keeps level 0 for all 3D trees
+ *  - impostors: draw far trees as impostors (default true), impostorDistance (default 80), impostorResolution (pixels per picture, default 128)
+ *  - canopy: draw the farthest part as a canopy surface (default true), canopyDistance (default 300)
+ *  - maxDistance: nothing is drawn beyond (default Infinity: use your camera's far plane / fog)
+ *  - fade: width of the cross-fade band as a fraction of the distance (default 0.12, 0 = hard switch)
+ *  - detail: factor (0.2 .. 1) on `lodDistances` and `impostorDistance`, see `adaptDetail()`
+ *  - chunkSize: side of the culling chunks (default 32)
+ *  - shadows: the nearest level casts shadows (default true)
  *  - treeOptions: passed to every `LeafTree` (leafType, trunkColor, textures, ...)
- *  - heightAt(x, z): ground height for each tree (default flat 0)
+ *  - textures: { canopy: 0..4 } pins the canopy texture (default: the leaf colourway of the first variant)
+ *  - heightAt(x, z): ground height for each tree and the canopy (default flat 0)
  *  - minScale, maxScale: random tree size range (default 0.8 .. 1.25)
+ *  - renderer: your WebGLRenderer, used to bake the impostors (otherwise a temporary one is used)
  *
- * Levels are built from the same seed but another complexity, so a tree
- * changes its shape slightly when it switches level; far away this is
- * hidden by distance and fog. `stats` holds the last frame's numbers.
- * Colliders: one box over the whole area (tag 'forest'); use
- * `getPlacements()` for per-tree positions.
+ * Without WebGL (Node) nothing is baked: impostors have no pictures, the rest
+ * (placements, chunks, canopy shape, `stats`) works the same. Colliders: one
+ * box over the whole area (tag 'forest'); use `getPlacements()` for per-tree
+ * positions.
  */
 export class Forest extends WorldModel {
   constructor(options = {}) {
     super('Forest', options);
     const {
-      count = 1000, area = 160, variants = 6, levels = FOREST_LEVELS, lodDistances = [25, 70], lod = true,
-      maxDistance = 250, shadows = true, treeOptions = {}, heightAt = null, minScale = 0.8, maxScale = 1.25,
+      count = 1000, area = 160, variants = 6, levels = FOREST_LEVELS, lodDistances = [25, 50], lod = true,
+      impostors = true, impostorDistance = 80, impostorResolution = 128, canopy = true, canopyDistance = 300,
+      maxDistance = Infinity, fade = 0.12, detail = 1, chunkSize = 32,
+      shadows = true, treeOptions = {}, heightAt = null, minScale = 0.8, maxScale = 1.25, renderer = null,
     } = options;
-    this.count = WorldModel.clampInt(count, 0, 100000, 1000);
+    this.count = WorldModel.clampInt(count, 0, 200000, 1000);
     this.areaSize = area;
     this.lodDistances = lodDistances;
     this.lod = lod;
+    this.impostors = impostors;
+    this.impostorDistance = impostorDistance;
+    this.canopy = canopy;
+    this.canopyDistance = canopyDistance;
     this.maxDistance = maxDistance;
+    this.fade = fade;
+    this._detail = 1;
+    this.detail = detail;
     const nVariants = WorldModel.clampInt(variants, 1, 64, 6);
     const rnd = this.random;
 
@@ -91,17 +130,35 @@ export class Forest extends WorldModel {
       });
     }
 
-    // Variants x levels: build a real LeafTree, keep only its merged meshes.
-    this._variants = [];
+    // Variants x levels: build a real LeafTree, keep only its merged meshes (with fading copies of its materials).
+    this._levelRanges = levels.map(() => rangeUniform());
+    this._fadeMaterials = new Map();
+    const fadeOf = (mat, l) => {
+      const key = `${mat.uuid}:${l}`;
+      if (!this._fadeMaterials.has(key)) this._fadeMaterials.set(key, fadeMaterial(mat, this._levelRanges[l]));
+      return this._fadeMaterials.get(key);
+    };
+    this._treeVariants = [];
+    const bakeInput = [];
     for (let v = 0; v < nVariants; v++) {
       const seed = (this.seed + Math.imul(v + 1, 0x9e3779b1)) >>> 0;
       const box = new Box3();
+      let crown = null;
+      let sources = null;
       const lvls = levels.map((level, l) => {
         const tree = new LeafTree({ ...treeOptions, seed, complexity: level.complexity, leafSize: (treeOptions.leafSize ?? 1) * (level.leafSize ?? 1) });
         this._ownedGeometries.push(...tree._ownedGeometries);
         tree._ownedGeometries.length = 0;
-        const meshes = tree.children.filter((o) => o.isMesh).map((src) => {
-          const mesh = new InstancedMesh(src.geometry, src.material, perVariant[v]);
+        const srcMeshes = tree.children.filter((o) => o.isMesh);
+        if (l === 0) {
+          sources = srcMeshes;
+          crown = tree._shapes.find((s) => s.tag === 'crown');
+          if (v === 0) this._treeTextures = tree.textureVariants();
+          this._leafVariants ??= [];
+          this._leafVariants[v] = tree.textureVariants().leaf;
+        }
+        const meshes = srcMeshes.map((src) => {
+          const mesh = new InstancedMesh(src.geometry, fadeOf(src.material, l), perVariant[v]);
           mesh.instanceMatrix.setUsage(DynamicDrawUsage);
           mesh.count = 0;
           mesh.frustumCulled = false; // instances are culled one by one in update()
@@ -113,18 +170,122 @@ export class Forest extends WorldModel {
         return { meshes, triangles: meshes.reduce((t, m) => t + trianglesOf(m), 0), slot: 0 };
       });
       if (perVariant[v] > 0) lvls.forEach((lv) => lv.meshes.forEach((m) => this.add(m)));
-      // Sphere around the crown, centred above the trunk; generous so nothing pops at the screen edge.
-      const centre = box.getCenter(new Vector3());
-      this._variants.push({ levels: lvls, cy: centre.y, radius: Math.hypot(centre.x, centre.z) + box.getSize(new Vector3()).length() / 2 });
+      // Sphere around the tree, centred on the trunk axis, so it holds the tree whichever way it turns.
+      const cy = box.getCenter(_c).y;
+      let r2 = 0;
+      for (const src of sources) {
+        const p = src.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) r2 = Math.max(r2, p.getX(i) ** 2 + (p.getY(i) - cy) ** 2 + p.getZ(i) ** 2);
+      }
+      const radius = Math.sqrt(r2) * 1.02;
+      const spread = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z);
+      const crownR = crown ? crown.data.radius : spread;
+      const crownY = crown ? crown.position[1] : cy;
+      this._treeVariants.push({
+        levels: lvls, cy, radius, top: box.max.y,
+        crown: { top: box.max.y, radius: crownR, depth: Math.max(1, box.max.y - crownY) },
+      });
+      bakeInput.push({ meshes: sources, centreY: cy, radius });
     }
+
+    // Chunks: trees sorted into a grid; each chunk knows the box around its trees.
+    const chunk = Math.max(4, chunkSize);
+    const nc = Math.max(1, Math.ceil(area / chunk));
+    const chunkMap = new Map();
+    this._trees.forEach((t, i) => {
+      const cx = Math.min(nc - 1, Math.max(0, Math.floor((t.x + area / 2) / chunk)));
+      const cz = Math.min(nc - 1, Math.max(0, Math.floor((t.z + area / 2) / chunk)));
+      const key = cz * nc + cx;
+      if (!chunkMap.has(key)) chunkMap.set(key, { trees: [], box: new Box3() });
+      const ch = chunkMap.get(key);
+      ch.trees.push(i);
+      const tv = this._treeVariants[t.variant];
+      const r = tv.radius * t.scale;
+      ch.box.expandByPoint(_p.set(t.x - r, t.y, t.z - r));
+      ch.box.expandByPoint(_p.set(t.x + r, t.y + tv.top * t.scale, t.z + r));
+    });
+    this._chunks = [...chunkMap.values()];
+    this.chunkCount = this._chunks.length;
+
+    const forestBox = new Box3();
+    this._chunks.forEach((ch) => forestBox.union(ch.box));
+    if (forestBox.isEmpty()) forestBox.set(new Vector3(-area / 2, 0, -area / 2), new Vector3(area / 2, 12, area / 2));
+    this._forestBox = forestBox;
+
+    // Uniforms shared by impostors and canopy (camera in forest space, forest scale).
+    this._shared = { camera: { value: new Vector3() }, scale: { value: 1 }, range: rangeUniform(), canopyRange: rangeUniform() };
+
+    // Impostor atlas (needs WebGL) and the average colour of each variant (for the canopy).
+    let atlas = null;
+    // Without WebGL nothing is drawn anyway; impostors still take part in the selection (stats, tests).
+    this._impostorsReady = !canBake();
+    if (impostors && canBake()) {
+      try {
+        atlas = bakeImpostors(bakeInput, { renderer, frameSize: impostorResolution });
+        this._impostorsReady = true;
+      } catch (err) {
+        console.warn('3JS-Models: baking forest impostors failed, far trees stay 3D.', err);
+        this.impostors = false;
+      }
+    }
+    this.impostorAtlas = atlas;
+    const leafColor = treeOptions.leafColor;
+    this._variantColors = this._treeVariants.map((_, v) => atlas?.means[v]
+      ?? (leafColor !== undefined && leafColor !== null ? new Color(leafColor) : fallbackColor('leaf', this._leafVariants[v] ?? 0)));
+    this.impostorMesh = createImpostors(this._trees, bakeInput.map(({ centreY, radius }) => ({ centreY, radius })), atlas, this._shared, this._variantColors[0]);
+    this.impostorMesh.visible = false;
+    this.add(this.impostorMesh);
+
+    // Canopy: one mesh over the crowns, wearing the canopy texture in the colourway of the leaves.
+    const pinned = options.textures?.canopy ?? treeOptions.textures?.canopy;
+    const canopyVariant = Number.isInteger(pinned) && pinned >= 0 && pinned < TEXTURE_VARIANTS ? pinned : (this._treeTextures?.leaf ?? 0);
+    this._variants.canopy = canopyVariant;
+    const spacing = area / Math.max(1, Math.sqrt(this.count));
+    const canopyGeo = canopyGeometry(this._trees, this._treeVariants.map((tv) => tv.crown), this._variantColors, {
+      area, cell: Math.min(8, Math.max(1.5, spacing * 0.75)), ground: heightAt ?? (() => 0),
+    });
+    this._ownedGeometries.push(canopyGeo, this.impostorMesh.geometry);
+    this.canopyMesh = createCanopy(canopyGeo, canopyVariant, this._shared);
+    this.canopyMesh.visible = false;
+    this.add(this.canopyMesh);
+    this._canopyTriangles = trianglesOf(this.canopyMesh);
 
     this.bounds = new Box3(new Vector3(-area / 2, 0, -area / 2), new Vector3(area / 2, 12, area / 2));
     this.viewBox = new Box3(new Vector3(-30, 0, -30), new Vector3(30, 12, 30)); // a good first camera view
     this.addShape('box', { size: [area, 1, area] }, [0, 0.5, 0], null, 'forest');
-    this.stats = { trees: this.count, visible: 0, levels: levels.map(() => 0), triangles: 0, drawCalls: 0 };
+    this.stats = {
+      trees: this.count, visible: 0, levels: levels.map(() => 0), impostors: 0, canopy: false, triangles: 0, drawCalls: 0, detail: this._detail, chunks: 0,
+    };
     this._seen = new Float64Array(48);
     this._levelCount = levels.length;
     this.invalidate();
+  }
+
+  /**
+   * Factor (0.2 .. 1) on the 3D distances (`lodDistances`, `impostorDistance`):
+   * lower it on slow devices, e.g. with `adaptDetail(fps)`.
+   */
+  get detail() { return this._detail; }
+
+  set detail(value) {
+    const d = Math.min(1, Math.max(0.2, Number.isFinite(value) ? value : 1));
+    if (d !== this._detail) { this._detail = d; this.invalidate?.(); }
+  }
+
+  /**
+   * Adjust `detail` to the measured frame rate: lowers it while `fps` is below
+   * `target`, raises it slowly again when there is room. Call it every
+   * half second or so with the fps you measured. Returns the new detail.
+   */
+  adaptDetail(fps, target = 50) {
+    if (fps < target * 0.92) this.detail = this._detail * 0.88;
+    else if (fps > target * 1.12 && this._detail < 1) this.detail = Math.min(1, this._detail * 1.04);
+    return this._detail;
+  }
+
+  /** The textures of the trees (first variant) and the canopy, as `{kind: variant}`. */
+  textureVariants() {
+    return { ...this._treeTextures, canopy: this._variants.canopy };
   }
 
   /** Per-tree placements: [{x, y, z, yaw, scale, variant}] in forest-local space. */
@@ -134,10 +295,29 @@ export class Forest extends WorldModel {
 
   /** Force the next `update()` to redo everything (after moving trees, toggling `lod`, ...). */
   invalidate() {
-    this._seen.fill(NaN);
+    this._seen?.fill(NaN);
   }
 
-  /** Pick level and visibility of every tree for `camera`. Cheap to call every frame. */
+  /**
+   * Where each tier starts and ends for the current options and `detail`:
+   * { levels: [[near, far]], impostors: [near, far] | null, canopy: [near, far] | null }.
+   */
+  ranges() {
+    const k = this._detail;
+    const max = this.maxDistance;
+    const canopyStart = this.canopy ? Math.min(this.canopyDistance, max) : null;
+    const useImpostors = this.impostors && this._impostorsReady;
+    const end3d = Math.min(useImpostors ? this.impostorDistance * k : (canopyStart ?? max), canopyStart ?? max, max);
+    const used = this.lod ? this._levelCount : 1;
+    const bounds = [null];
+    for (let l = 1; l < used; l++) bounds.push(Math.min(end3d, (this.lodDistances[l - 1] ?? Infinity) * k));
+    bounds.push(end3d);
+    const levels = Array.from({ length: this._levelCount }, (_, l) => (l < used ? [bounds[l], bounds[l + 1]] : null));
+    const impostors = useImpostors ? [end3d, canopyStart ?? max] : null;
+    return { levels, impostors, canopy: canopyStart === null ? null : [canopyStart, max] };
+  }
+
+  /** Pick tier and level of every tree for `camera`. Cheap to call every frame. */
   update(camera) {
     camera.updateMatrixWorld();
     this.updateWorldMatrix(true, false);
@@ -148,35 +328,66 @@ export class Forest extends WorldModel {
     if (same) return;
     for (let i = 0; i < 16; i++) { seen[i] = a[i]; seen[i + 16] = b[i]; seen[i + 32] = w[i]; }
 
-    _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    // Everything below happens in forest space; distances are scaled to world units by k.
+    _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(this.matrixWorld);
     _frustum.setFromProjectionMatrix(_pv);
-    _cam.setFromMatrixPosition(camera.matrixWorld);
+    _inv.copy(this.matrixWorld).invert();
+    _cam.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_inv);
     const k = this.matrixWorld.getMaxScaleOnAxis();
-    const last = this._levelCount - 1;
-    const counts = this.stats.levels.fill(0);
-    let visible = 0, triangles = 0;
-    for (const v of this._variants) v.levels.forEach((lv) => { lv.slot = 0; });
+    this._shared.camera.value.copy(_cam);
+    this._shared.scale.value = k;
 
-    for (const t of this._trees) {
-      const variant = this._variants[t.variant];
-      _c.set(t.x, t.y + variant.cy * t.scale, t.z).applyMatrix4(this.matrixWorld);
-      const dist = _c.distanceTo(_cam);
-      const r = variant.radius * t.scale * k;
-      if (dist - r > this.maxDistance) continue;
-      if (!_frustum.intersectsSphere({ center: _c, radius: r })) continue;
-      let level = 0;
-      if (this.lod) while (level < last && dist > this.lodDistances[level]) level++;
-      const lv = variant.levels[level];
-      _m.compose(_p.set(t.x, t.y, t.z), _q.setFromAxisAngle(_yAxis, t.yaw), _s.setScalar(t.scale));
-      for (const mesh of lv.meshes) mesh.setMatrixAt(lv.slot, _m);
-      lv.slot++;
-      counts[level]++;
-      triangles += lv.triangles;
-      visible++;
+    const fade = Math.max(0, this.fade);
+    const R = this.ranges();
+    R.levels.forEach((r, l) => setRange(this._levelRanges[l], r ? r[0] : 0, r ? r[1] : 0, fade));
+    if (R.impostors) setRange(this._shared.range, R.impostors[0], R.impostors[1], fade);
+    if (R.canopy) setRange(this._shared.canopyRange, R.canopy[0], R.canopy[1], fade);
+    const end3d = R.levels.reduce((m, r) => (r ? Math.max(m, r[1]) : m), 0);
+    const reach3d = end3d * (1 + fade / 2);
+    const imp = R.impostors && this._shared.range;
+    const impLo = R.impostors ? R.impostors[0] * (1 - fade / 2) : 0;
+    const impHi = R.impostors ? R.impostors[1] * (1 + fade / 2) : 0;
+
+    const counts = this.stats.levels.fill(0);
+    let visible = 0, triangles = 0, impostors = 0, chunks = 0;
+    for (const v of this._treeVariants) v.levels.forEach((lv) => { lv.slot = 0; });
+    const levelRanges = this._levelRanges;
+    const used = R.levels.map((r) => !!r && r[1] > r[0] - 1e-9);
+
+    for (const ch of this._chunks) {
+      const [near, far] = boxDistances(ch.box, _cam);
+      const dNear = near * k, dFar = far * k;
+      const has3d = dNear < reach3d;
+      const hasImp = imp && dNear < impHi && dFar >= impLo;
+      if (!has3d && !hasImp) continue;
+      if (!_frustum.intersectsBox(ch.box)) continue;
+      chunks++;
+      for (const i of ch.trees) {
+        const t = this._trees[i];
+        const d = k * Math.hypot(t.x - _cam.x, t.y - _cam.y, t.z - _cam.z);
+        if (hasImp && inRange(imp, d)) impostors++;
+        if (!has3d || d >= reach3d) continue;
+        const variant = this._treeVariants[t.variant];
+        _sphere.center.set(t.x, t.y + variant.cy * t.scale, t.z);
+        _sphere.radius = variant.radius * t.scale;
+        if (!_frustum.intersectsSphere(_sphere)) continue;
+        let drawn = false;
+        for (let l = 0; l < levelRanges.length; l++) {
+          if (!used[l] || !inRange(levelRanges[l], d)) continue;
+          const lv = variant.levels[l];
+          if (!drawn) _m.compose(_p.set(t.x, t.y, t.z), _q.setFromAxisAngle(_yAxis, t.yaw), _s.setScalar(t.scale));
+          for (const mesh of lv.meshes) mesh.setMatrixAt(lv.slot, _m);
+          lv.slot++;
+          counts[l]++;
+          triangles += lv.triangles;
+          drawn = true;
+        }
+        if (drawn) visible++;
+      }
     }
 
     let drawCalls = 0;
-    for (const v of this._variants) {
+    for (const v of this._treeVariants) {
       for (const lv of v.levels) {
         for (const mesh of lv.meshes) {
           mesh.count = lv.slot;
@@ -186,11 +397,24 @@ export class Forest extends WorldModel {
         }
       }
     }
-    Object.assign(this.stats, { visible, triangles, drawCalls });
+    const [fNear, fFar] = boxDistances(this._forestBox, _cam);
+    const inView = _frustum.intersectsBox(this._forestBox);
+    this.impostorMesh.visible = !!imp && inView && impostors > 0;
+    if (this.impostorMesh.visible) { drawCalls++; triangles += impostors * 2; }
+    const canopyLo = R.canopy ? R.canopy[0] * (1 - fade / 2) : 0;
+    this.canopyMesh.visible = !!R.canopy && inView && fFar * k >= canopyLo && fNear * k < (R.canopy?.[1] ?? 0) * (1 + fade / 2);
+    if (this.canopyMesh.visible) { drawCalls++; triangles += this._canopyTriangles; }
+    Object.assign(this.stats, { visible, impostors, canopy: this.canopyMesh.visible, triangles, drawCalls, detail: this._detail, chunks });
   }
 
   dispose() {
     this.children.filter((o) => o.isInstancedMesh).forEach((m) => m.dispose());
+    this._fadeMaterials.forEach((m) => m.dispose());
+    this._fadeMaterials.clear();
+    this.impostorMesh.material.dispose();
+    this.canopyMesh.material.dispose();
+    this.impostorAtlas?.color.dispose();
+    this.impostorAtlas?.normal.dispose();
     super.dispose();
   }
 }
