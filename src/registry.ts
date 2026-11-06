@@ -1,7 +1,7 @@
 import { Box3, Vector3 } from 'three';
 import {
   SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree, StylizedTree, Forest,
-  MAX_STYLIZED_COMPLEXITY,
+  MAX_STYLIZED_COMPLEXITY, STYLIZED_FOREST_LEVELS,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
   Wall, Door, Window, GlassDoor, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
   LEAF_TYPES,
@@ -36,6 +36,7 @@ const FOREST_PARAMS = (count, area) => [
   { key: 'treeType', label: 'Tree type', type: 'select', value: 'stylized', options: [['stylized', 'Stylized (cards)'], ['leaf', 'Leaf-Tree']] },
   { key: 'count', label: 'Trees', type: 'range', min: 50, max: 60000, step: 50, value: count },
   { key: 'area', label: 'Area (side)', type: 'range', min: 40, max: 1500, step: 10, value: area },
+  { key: 'sizeVariety', label: 'Size variety', type: 'range', min: 0, max: 1.5, step: 0.1, value: 1 },
   { key: 'treeDistance', label: '3D tree range', type: 'range', min: 10, max: 100, step: 5, value: 25 },
   { key: 'impostorDistance', label: 'Impostor range', type: 'range', min: 100, max: 1500, step: 50, value: 600 },
   ON_OFF('lod', 'Distance LOD'),
@@ -44,10 +45,14 @@ const FOREST_PARAMS = (count, area) => [
   ON_OFF('shadows', 'Shadows'),
   ON_OFF('autoDetail', 'Auto detail'),
 ];
+/** Complexity slider of the forests: complexity of the nearest 3D (stylized) trees. */
+const FOREST_COMPLEXITY = { max: MAX_STYLIZED_COMPLEXITY, value: STYLIZED_FOREST_LEVELS[0].complexity };
 /** Forest from the viewer's options; `autoDetail` lets the viewer lower `detail` when the frame rate drops. */
 function forest(o) {
   const f = new Forest({
-    seed: o.seed, count: o.count, area: o.area, treeType: o.treeType, lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
+    seed: o.seed, count: o.count, area: o.area, treeType: o.treeType, sizeVariety: o.sizeVariety,
+    complexity: o.treeType === 'leaf' ? null : o.complexity, // the slider covers the stylized trees; leaf trees keep their levels
+    lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
     impostorDistance: o.treeDistance, canopyDistance: o.impostorDistance,
     shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
   });
@@ -61,9 +66,9 @@ const unsorted = [
   { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new OakTree(o) },
   { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, params: [LEAF_TYPE_PARAM, ...TREE_PARAMS], create: (o) => new LeafTree(o) },
   { name: 'Stylized-Tree', complexity: { max: MAX_STYLIZED_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new StylizedTree(o) },
-  { name: 'Forest', params: FOREST_PARAMS(1000, 160), fog: [150, 1400], create: forest },
+  { name: 'Forest', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(1000, 160), fog: [150, 1400], create: forest },
   {
-    name: 'Forest (fly-over)', params: FOREST_PARAMS(30000, 1000), fog: [200, 1600],
+    name: 'Forest (fly-over)', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(30000, 1000), fog: [200, 1600],
     create: (o) => {
       const f = forest(o);
       f.viewBox = new Box3(new Vector3(-120, 0, -120), new Vector3(120, 60, 120)); // start high above the trees
