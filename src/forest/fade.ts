@@ -71,7 +71,10 @@ export function injectFadeFragment(shader, range) {
  */
 export function fadeMaterial(source, range) {
   const mat = source.clone();
-  mat.onBeforeCompile = (shader) => {
+  const base = source.onBeforeCompile;
+  const baseKey = source.customProgramCacheKey();
+  mat.onBeforeCompile = (shader, renderer) => {
+    base.call(source, shader, renderer); // e.g. billboarded leaf cards
     shader.vertexShader = `varying float vForestDist;\n${shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
 #ifdef USE_INSTANCING
   vForestDist = distance((modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, cameraPosition);
@@ -80,6 +83,6 @@ export function fadeMaterial(source, range) {
 #endif`)}`;
     injectFadeFragment(shader, range);
   };
-  mat.customProgramCacheKey = () => 'forest-fade';
+  mat.customProgramCacheKey = () => `forest-fade:${baseKey}`;
   return mat;
 }

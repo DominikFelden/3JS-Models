@@ -70,6 +70,16 @@ export function getTexture(kind, variant) {
 }
 
 /**
+ * Linear average colour of a variant as it shows on a model: the baked
+ * texture's mean, or the plain fallback colour where nothing is baked (Node).
+ */
+export function textureMean(kind, variant) {
+  check(kind, variant);
+  const mean = slots(kind)?.[variant].mean;
+  return mean ? new Color().setRGB(mean[0], mean[1], mean[2]) : fallbackColor(kind, variant);
+}
+
+/**
  * Shared material wearing a pooled texture. The same arguments always return
  * the same material instance, so any number of models share it.
  *  - color: optional target colour; the texture is recoloured so that its
