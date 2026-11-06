@@ -1,6 +1,6 @@
 import { Color, DoubleSide, FrontSide, MeshStandardMaterial } from 'three';
-import { RECIPES, KINDS, MAPPING, TEXTURE_VARIANTS, fallbackColor } from './recipes.js';
-import { canBake, bakeKind } from './bake.js';
+import { RECIPES, KINDS, MAPPING, TEXTURE_VARIANTS, fallbackColor } from './recipes.ts';
+import { canBake, bakeKind } from './bake.ts';
 
 export { KINDS as TEXTURE_KINDS, TEXTURE_VARIANTS };
 
@@ -79,7 +79,7 @@ export function getTexture(kind, variant) {
  *  - glow: emissive intensity; the texture lights itself (window glass).
  * Without textures (Node) this is a plain material in the variant's colour.
  */
-export function pooledMaterial(kind, variant, { color = null, flatShading = true, vertexColors = false, roughness = 1, metalness = 0, glow = 0 } = {}) {
+export function pooledMaterial(kind, variant, { color = null, flatShading = true, vertexColors = false, roughness = 1, metalness = 0, glow = 0 }: any = {}) {
   check(kind, variant);
   const target = color === null ? null : new Color(color);
   const key = `${kind}:${variant}:${target ? target.getHexString() : '-'}:${flatShading}:${vertexColors}:${roughness}:${metalness}:${glow}`;
@@ -112,7 +112,7 @@ export function pooledMaterial(kind, variant, { color = null, flatShading = true
  * Pass your own `renderer` to avoid a temporary second WebGL context.
  * Resolves to true when textures are available.
  */
-export async function preloadTextures({ kinds = KINDS, renderer = null, onProgress = null } = {}) {
+export async function preloadTextures({ kinds = KINDS, renderer = null, onProgress = null }: any = {}) {
   let done = 0;
   for (const kind of kinds) {
     check(kind);

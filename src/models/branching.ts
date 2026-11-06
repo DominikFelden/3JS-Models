@@ -1,5 +1,5 @@
 import { CylinderGeometry, Vector3, Quaternion, Color } from 'three';
-import { shared } from '../WorldModel.js';
+import { shared } from '../WorldModel.ts';
 
 const Y = new Vector3(0, 1, 0);
 
@@ -27,7 +27,7 @@ const hex = (v) => { try { return v === undefined || v === null ? undefined : ne
  * colours stay those of the picked pooled textures).
  * Factors multiply the seed-driven size: trunkHeight, trunkThickness, leafSize.
  */
-export function treeStyle(o = {}) {
+export function treeStyle(o: any = {}) {
   return {
     trunkHeight: num(o.trunkHeight, 0.3, 3), trunkThickness: num(o.trunkThickness, 0.3, 3), leafSize: num(o.leafSize, 0.3, 4),
     trunkColor: hex(o.trunkColor), leafColor: hex(o.leafColor),

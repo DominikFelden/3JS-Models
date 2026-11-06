@@ -1,6 +1,6 @@
 import { CylinderGeometry, SphereGeometry, ConeGeometry, Vector3 } from 'three';
-import { WorldModel, MergeBuilder, shared } from '../WorldModel.js';
-import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.js';
+import { WorldModel, MergeBuilder, shared } from '../WorldModel.ts';
+import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.ts';
 
 /** Bark variants that suit a conifer: brown, grey, red-brown and tan (variant 3 is white birch). */
 const PINE_BARK = [0, 1, 2, 4];
@@ -44,7 +44,13 @@ function addCrownAfterTrunk(model, tips, extra) {
  * Tags: 'trunk', 'crown', 'branch'.
  */
 export class PineTree extends WorldModel {
-  constructor(options = {}) {
+  declare complexity: any;
+  declare hf: any;
+  declare lift: any;
+  declare ls: any;
+  declare random: any;
+  declare wf: any;
+  constructor(options: any = {}) {
     super('PineTree', options);
     this.complexity = WorldModel.clampInt(options.complexity, 0, MAX_TREE_COMPLEXITY, 0);
     const trunkG = shared('pine:trunk', () => new CylinderGeometry(0.15, 0.22, 1.2, 6));
@@ -154,7 +160,13 @@ export class PineTree extends WorldModel {
  * Tags: 'trunk', 'crown', 'branch'. The crown sphere bounds all leaves.
  */
 export class OakTree extends WorldModel {
-  constructor(options = {}) {
+  declare complexity: any;
+  declare cs: any;
+  declare ls: any;
+  declare random: any;
+  declare th: any;
+  declare tw: any;
+  constructor(options: any = {}) {
     super('OakTree', options);
     this.complexity = WorldModel.clampInt(options.complexity, 0, MAX_TREE_COMPLEXITY, 0);
     const trunkG = shared('oak:trunk', () => new CylinderGeometry(0.25, 0.4, 2, 7));

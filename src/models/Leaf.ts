@@ -1,5 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, Vector3, Matrix4, Quaternion } from 'three';
-import { shared } from '../WorldModel.js';
+import { shared } from '../WorldModel.ts';
 
 const UP = new Vector3(0, 1, 0);
 
@@ -31,6 +31,12 @@ function flatGeometry(points) {
  * Subclasses only supply `geometry()`.
  */
 export class Leaf {
+  declare direction: any;
+  declare length: any;
+  declare position: any;
+  declare quaternion: any;
+  declare tint: any;
+  declare width: any;
   /** Flat blade geometry, shared by all instances of the subclass. */
   static geometry() { throw new Error('Leaf subclasses must implement geometry()'); }
 
@@ -39,7 +45,7 @@ export class Leaf {
    * @param {Vector3} outward  horizontal direction away from the tree (need not be normalised)
    * @param {object} o         {length, width, droop (rad below horizontal), roll (rad), tint}
    */
-  constructor(position, outward, { length = 0.4, width = 0.25, droop = 0.7, roll = 0, tint = 1 } = {}) {
+  constructor(position, outward, { length = 0.4, width = 0.25, droop = 0.7, roll = 0, tint = 1 }: any = {}) {
     this.position = position;
     this.length = length;
     this.width = width;
@@ -55,7 +61,7 @@ export class Leaf {
   }
 
   place(builder, mat) {
-    builder.add(this.constructor.geometry(), mat, {
+    builder.add((this.constructor as any).geometry(), mat, {
       position: this.position.toArray(),
       quaternion: this.quaternion,
       scale: [this.width, 1, this.length],

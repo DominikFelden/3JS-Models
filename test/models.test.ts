@@ -1,6 +1,7 @@
+// @ts-nocheck -- tests poke at untyped internals and three.js object subtypes
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { SimpleTree } from '../src/index.js';
+import { SimpleTree } from '../src/index.ts';
 
 test('SimpleTree instances share geometries and materials', () => {
   const a = new SimpleTree();
@@ -10,7 +11,7 @@ test('SimpleTree instances share geometries and materials', () => {
   assert.strictEqual(a.children[1].geometry, b.children[1].geometry);
 });
 
-import { PineTree, OakTree, Bush, Rock, Castle } from '../src/index.js';
+import { PineTree, OakTree, Bush, Rock, Castle } from '../src/index.ts';
 
 const near = (a, b) => Math.abs(a - b) < 1e-6;
 
@@ -47,7 +48,7 @@ test('bounds are finite for all models', () => {
 });
 
 import { Quaternion, Vector3 } from 'three';
-import { House, HOUSE_TYPES, MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY } from '../src/index.js';
+import { House, HOUSE_TYPES, MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY } from '../src/index.ts';
 
 const count = (m, tag) => m.getColliderTags().filter((t) => t === tag).length;
 const sig = (m) => JSON.stringify(m.getColliders());
@@ -282,7 +283,7 @@ test('Seeds change models substantially: tree height, castle layout, house walls
   assert.ok(walls.size > 8, 'wall textures vary');
 });
 
-import { LeafTree, LEAF_TYPES } from '../src/index.js';
+import { LeafTree, LEAF_TYPES } from '../src/index.ts';
 
 test('LeafTree builds leaves that hang and face up/outward', () => {
   const t = new LeafTree({ seed: 3 });
@@ -298,7 +299,7 @@ test('LeafTree builds leaves that hang and face up/outward', () => {
   assert.strictEqual(a.leaves.length, t.leaves.length);
 });
 
-import { models } from '../src/registry.js';
+import { models } from '../src/registry.ts';
 
 test('registry is sorted alphabetically and every model builds with a collider and finite bounds', () => {
   const names = models.map((m) => m.name);
@@ -334,7 +335,7 @@ test('Tree options: trunk size, leaf size, leaf type, colours and complexity 20'
   assert.ok(new LeafTree({ seed: 4, leafSize: 2 }).leaves[0].length > new LeafTree({ seed: 4 }).leaves[0].length * 1.5);
 });
 
-import { Forest } from '../src/index.js';
+import { Forest } from '../src/index.ts';
 import { PerspectiveCamera } from 'three';
 
 test('Forest instances few variants, picks levels by distance and culls', () => {

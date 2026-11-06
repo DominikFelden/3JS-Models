@@ -1,5 +1,5 @@
 import { SphereGeometry } from 'three';
-import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
+import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.ts';
 
 /**
  * Bush: a dense clump of ~8 squashed, differently tinted spheres, sometimes
@@ -7,6 +7,7 @@ import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
  * (`textures: {foliage}` pins one). Collider: one sphere (radius 0.7).
  */
 export class Bush extends WorldModel {
+  declare random: any;
   constructor(options) {
     super('Bush', options);
     const g = shared('bush:sphere', () => new SphereGeometry(1, 7, 5));

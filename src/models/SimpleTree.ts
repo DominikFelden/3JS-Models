@@ -4,7 +4,7 @@ import {
   CylinderGeometry,
   SphereGeometry,
 } from 'three';
-import { pooledMaterial } from '../textures/pool.js';
+import { pooledMaterial } from '../textures/pool.ts';
 
 // Geometries and materials are created once and shared by all instances.
 let shared = null;

@@ -1,12 +1,12 @@
 import { InstancedMesh, Matrix4, Quaternion, Vector3, Box3, Frustum, DynamicDrawUsage, Color } from 'three';
-import { WorldModel } from './WorldModel.js';
-import { LeafTree } from './models/LeafTree.js';
-import { canBake } from './textures/bake.js';
-import { TEXTURE_VARIANTS } from './textures/pool.js';
-import { fallbackColor } from './textures/recipes.js';
-import { fadeMaterial, rangeUniform, setRange, inRange } from './forest/fade.js';
-import { bakeImpostors, createImpostors } from './forest/impostors.js';
-import { canopyGeometry, createCanopy } from './forest/canopy.js';
+import { WorldModel } from './WorldModel.ts';
+import { LeafTree } from './models/LeafTree.ts';
+import { canBake } from './textures/bake.ts';
+import { TEXTURE_VARIANTS } from './textures/pool.ts';
+import { fallbackColor } from './textures/recipes.ts';
+import { fadeMaterial, rangeUniform, setRange, inRange } from './forest/fade.ts';
+import { bakeImpostors, createImpostors } from './forest/impostors.ts';
+import { canopyGeometry, createCanopy } from './forest/canopy.ts';
 
 /**
  * Detail levels of the real (3D) forest trees. Level 0 is used close to the
@@ -29,7 +29,7 @@ const _cam = new Vector3();
 const _frustum = new Frustum();
 const _pv = new Matrix4();
 const _yAxis = new Vector3(0, 1, 0);
-const _sphere = { center: new Vector3(), radius: 0 };
+const _sphere: any = { center: new Vector3(), radius: 0 };
 
 const trianglesOf = (mesh) => (mesh.geometry.index ? mesh.geometry.index.count : mesh.geometry.attributes.position.count) / 3;
 
@@ -86,7 +86,42 @@ function boxDistances(b, p) {
  * positions.
  */
 export class Forest extends WorldModel {
-  constructor(options = {}) {
+  declare _canopyTriangles: any;
+  declare _chunks: any;
+  declare _detail: any;
+  declare _fadeMaterials: any;
+  declare _forestBox: any;
+  declare _impostorsReady: any;
+  declare _leafVariants: any;
+  declare _levelCount: any;
+  declare _levelRanges: any;
+  declare _ownedGeometries: any;
+  declare _seen: any;
+  declare _shared: any;
+  declare _treeTextures: any;
+  declare _treeVariants: any;
+  declare _trees: any;
+  declare _variantColors: any;
+  declare _variants: any;
+  declare areaSize: any;
+  declare bounds: any;
+  declare canopy: any;
+  declare canopyDistance: any;
+  declare canopyMesh: any;
+  declare chunkCount: any;
+  declare fade: any;
+  declare impostorAtlas: any;
+  declare impostorDistance: any;
+  declare impostorMesh: any;
+  declare impostors: any;
+  declare lod: any;
+  declare lodDistances: any;
+  declare maxDistance: any;
+  declare random: any;
+  declare seed: any;
+  declare stats: any;
+  declare viewBox: any;
+  constructor(options: any = {}) {
     super('Forest', options);
     const {
       count = 1000, area = 160, variants = 6, levels = FOREST_LEVELS, lodDistances = [25, 50], lod = true,
@@ -149,7 +184,7 @@ export class Forest extends WorldModel {
         const tree = new LeafTree({ ...treeOptions, seed, complexity: level.complexity, leafSize: (treeOptions.leafSize ?? 1) * (level.leafSize ?? 1) });
         this._ownedGeometries.push(...tree._ownedGeometries);
         tree._ownedGeometries.length = 0;
-        const srcMeshes = tree.children.filter((o) => o.isMesh);
+        const srcMeshes = tree.children.filter((o: any) => o.isMesh) as any[];
         if (l === 0) {
           sources = srcMeshes;
           crown = tree._shapes.find((s) => s.tag === 'crown');
@@ -408,7 +443,7 @@ export class Forest extends WorldModel {
   }
 
   dispose() {
-    this.children.filter((o) => o.isInstancedMesh).forEach((m) => m.dispose());
+    (this.children as any[]).filter((o) => o.isInstancedMesh).forEach((m) => m.dispose());
     this._fadeMaterials.forEach((m) => m.dispose());
     this._fadeMaterials.clear();
     this.impostorMesh.material.dispose();

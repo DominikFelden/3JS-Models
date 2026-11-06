@@ -1,6 +1,6 @@
 import { BoxGeometry, CylinderGeometry, ConeGeometry, SphereGeometry, ExtrudeGeometry, Shape, Vector2 } from 'three';
 import { Vector3 } from 'three';
-import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
+import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.ts';
 
 /**
  * Small building / plant parts. Each is a standalone WorldModel (so it can be
@@ -27,7 +27,7 @@ const prism = () => shared('part:prism', () => {
 
 /** Straight stone/brick/plaster wall segment with a coping stone on top. `surface`: stone, brick, cobble, plaster, planks or mossy. */
 export class Wall extends WorldModel {
-  constructor({ width = 4, height = 2.5, depth = 0.4, surface = 'stone', ...o } = {}) {
+  constructor({ width = 4, height = 2.5, depth = 0.4, surface = 'stone', ...o }: any = {}) {
     super('Wall', o);
     const b = new MergeBuilder();
     const m = this.surface(WALL_SURFACES.includes(surface) ? surface : 'stone');
@@ -40,7 +40,7 @@ export class Wall extends WorldModel {
 
 /** Planked door with iron straps, in a wall panel. */
 export class Door extends WorldModel {
-  constructor({ width = 0.9, height = 1.7, arched = false, ...o } = {}) {
+  constructor({ width = 0.9, height = 1.7, arched = false, ...o }: any = {}) {
     super('Door', o);
     const b = new MergeBuilder();
     const w = width + 1.2, h = height + 0.7;
@@ -53,7 +53,7 @@ export class Door extends WorldModel {
 
 /** Framed window with glass, sill and optional shutters, in a wall panel. */
 export class Window extends WorldModel {
-  constructor({ width = 0.8, height = 1.1, arched = false, shutters = true, ...o } = {}) {
+  constructor({ width = 0.8, height = 1.1, arched = false, shutters = true, ...o }: any = {}) {
     super('Window', o);
     const b = new MergeBuilder();
     const w = width + 1.2, h = height + 1.2;
@@ -66,7 +66,7 @@ export class Window extends WorldModel {
 
 /** Tall glass door that leads out to a balcony, in a wall panel. */
 export class GlassDoor extends WorldModel {
-  constructor({ width = 0.7, height = 1.5, ...o } = {}) {
+  constructor({ width = 0.7, height = 1.5, ...o }: any = {}) {
     super('Glass Door', o);
     const b = new MergeBuilder();
     const w = width + 1.6, h = height + 0.8;
@@ -79,7 +79,7 @@ export class GlassDoor extends WorldModel {
 
 /** Round pillar with base, shaft and capital. */
 export class Column extends WorldModel {
-  constructor({ height = 3, radius = 0.3, ...o } = {}) {
+  constructor({ height = 3, radius = 0.3, ...o }: any = {}) {
     super('Column', o);
     const b = new MergeBuilder();
     const stone = this.surface('plaster');
@@ -94,7 +94,7 @@ export class Column extends WorldModel {
 
 /** Roof. `type`: 'gable' | 'hip' (pyramid) | 'flat'. Sits on a footprint of width x depth. */
 export class Roof extends WorldModel {
-  constructor({ type = 'gable', width = 5, depth = 4, height = 1.8, ...o } = {}) {
+  constructor({ type = 'gable', width = 5, depth = 4, height = 1.8, ...o }: any = {}) {
     super('Roof', o);
     const b = new MergeBuilder();
     const tiles = this.surface('shingle');
@@ -116,7 +116,7 @@ export class Roof extends WorldModel {
 
 /** Brick chimney with a cap and a flue opening. */
 export class Chimney extends WorldModel {
-  constructor({ height = 2.2, width = 0.7, ...o } = {}) {
+  constructor({ height = 2.2, width = 0.7, ...o }: any = {}) {
     super('Chimney', o);
     const b = new MergeBuilder();
     b.add(box(), this.surface('brick'), { position: [0, height / 2, 0], scale: [width, height, width] });
@@ -130,7 +130,7 @@ export class Chimney extends WorldModel {
 
 /** Straight flight of stone steps rising towards -Z; `steps` count, each `rise` high. */
 export class Stairs extends WorldModel {
-  constructor({ steps = 7, width = 1.4, rise = 0.2, run = 0.35, ...o } = {}) {
+  constructor({ steps = 7, width = 1.4, rise = 0.2, run = 0.35, ...o }: any = {}) {
     super('Stairs', o);
     const b = new MergeBuilder();
     const stone = this.surface('stone');
@@ -145,7 +145,7 @@ export class Stairs extends WorldModel {
 
 /** Wooden railing along X with posts, a handrail and balusters. */
 export class Railing extends WorldModel {
-  constructor({ length = 3, height = 1, ...o } = {}) {
+  constructor({ length = 3, height = 1, ...o }: any = {}) {
     super('Railing', o);
     const b = new MergeBuilder();
     const wood = this.surface('planks');
@@ -163,7 +163,7 @@ export class Railing extends WorldModel {
 
 /** Balcony: a slab on corbels with a railing on three sides (open towards -Z, the wall side). */
 export class Balcony extends WorldModel {
-  constructor({ width = 2.4, depth = 1.2, height = 2, ...o } = {}) {
+  constructor({ width = 2.4, depth = 1.2, height = 2, ...o }: any = {}) {
     super('Balcony', o);
     const b = new MergeBuilder();
     const stone = this.surface('stone');
@@ -195,7 +195,7 @@ export class Balcony extends WorldModel {
 
 /** A tuft of grass blades. `blades` count. */
 export class Grass extends WorldModel {
-  constructor({ blades = 14, ...o } = {}) {
+  constructor({ blades = 14, ...o }: any = {}) {
     super('Grass', o);
     const b = new MergeBuilder();
     const g = shared('part:blade', () => { const c = new ConeGeometry(0.5, 1, 3); c.translate(0, 0.5, 0); return c; });
@@ -212,7 +212,7 @@ export class Grass extends WorldModel {
 
 /** Bird's nest: a ring of twigs with eggs. `eggs` count. */
 export class BirdsNest extends WorldModel {
-  constructor({ eggs = 3, ...o } = {}) {
+  constructor({ eggs = 3, ...o }: any = {}) {
     super('BirdsNest', o);
     const b = new MergeBuilder();
     const twig = material(0x6e5233, true, true);
@@ -235,7 +235,8 @@ export class BirdsNest extends WorldModel {
 
 /** Flower: stem, leaves and a ring of petals around a centre. `petals` count. */
 export class Flower extends WorldModel {
-  constructor({ petals = 8, height = 0.5, color = null, ...o } = {}) {
+  declare seed: any;
+  constructor({ petals = 8, height = 0.5, color = null, ...o }: any = {}) {
     super('Flower', o);
     const colour = color ?? [0xe8453c, 0xf2d13a, 0xd96bd0, 0xf5f5f0, 0x6b8cf0][this.seed % 5];
     const b = new MergeBuilder();

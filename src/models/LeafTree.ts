@@ -1,7 +1,7 @@
 import { CylinderGeometry, Vector3 } from 'three';
-import { WorldModel, MergeBuilder, shared } from '../WorldModel.js';
-import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.js';
-import { TriangleLeaf, LEAF_TYPES } from './Leaf.js';
+import { WorldModel, MergeBuilder, shared } from '../WorldModel.ts';
+import { growBranch, branchLevels, treeStyle, MAX_TREE_COMPLEXITY } from './branching.ts';
+import { TriangleLeaf, LEAF_TYPES } from './Leaf.ts';
 
 
 /**
@@ -25,7 +25,12 @@ import { TriangleLeaf, LEAF_TYPES } from './Leaf.js';
  * Tags: 'trunk', 'crown', 'branch'. The leaf class used is in `this.leafClass`.
  */
 export class LeafTree extends WorldModel {
-  constructor(options = {}) {
+  declare _shapes: any;
+  declare complexity: any;
+  declare leafClass: any;
+  declare leaves: any;
+  declare random: any;
+  constructor(options: any = {}) {
     super('LeafTree', options);
     this.complexity = WorldModel.clampInt(options.complexity, 0, MAX_TREE_COMPLEXITY, 4);
     const rnd = this.random;

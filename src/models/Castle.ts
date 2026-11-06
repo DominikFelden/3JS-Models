@@ -1,5 +1,5 @@
 import { BoxGeometry, CylinderGeometry, ConeGeometry, Shape, ExtrudeGeometry, Quaternion, Vector3 } from 'three';
-import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
+import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.ts';
 
 /** Highest supported castle complexity. */
 export const MAX_CASTLE_COMPLEXITY = 5;
@@ -63,7 +63,22 @@ const gableG = () => shared('castle:gable', () => {                             
  *  quaternion) | 'keep' box | 'hall' box | 'turret' cylinder (keep stair turret)
  */
 export class Castle extends WorldModel {
-  constructor(options = {}) {
+  declare _b: any;
+  declare _banner: any;
+  declare _doorX: any;
+  declare _gateW: any;
+  declare _jit: any;
+  declare _roof: any;
+  declare _shutter: any;
+  declare _stone: any;
+  declare _stretch: any;
+  declare _th: any;
+  declare _towerRoof: any;
+  declare _tr: any;
+  declare _wallS: any;
+  declare complexity: any;
+  declare random: any;
+  constructor(options: any = {}) {
     super('Castle', options);
     this.complexity = WorldModel.clampInt(options.complexity, 0, MAX_CASTLE_COMPLEXITY, 1);
     const c = this.complexity;

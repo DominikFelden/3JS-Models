@@ -4,7 +4,7 @@ import {
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
   Wall, Door, Window, GlassDoor, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
   LEAF_TYPES,
-} from './index.js';
+} from './index.ts';
 
 /** Tree controls shown in the viewer's parameter modal (`key` = model option). Colours default to `null`: the picked texture's own colours. */
 const TREE_PARAMS = [
@@ -46,7 +46,7 @@ function forest(o) {
     seed: o.seed, count: o.count, area: o.area, lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
     shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
   });
-  f.autoDetail = o.autoDetail !== 'off';
+  (f as any).autoDetail = o.autoDetail !== 'off';
   return f;
 }
 const base = (o) => ({ seed: o.seed, textures: o.textures });
