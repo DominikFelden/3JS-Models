@@ -505,3 +505,45 @@ test('Forest of stylized trees: same tiers, far fewer triangles than leaf trees'
   s.dispose();
   l.dispose();
 });
+
+test('StylizedTree 5 and 6 branch out into clumped crowns; lowPoly keeps the shape for less', () => {
+  const one = new StylizedTree({ seed: 9, complexity: 4 });
+  const five = new StylizedTree({ seed: 9, complexity: 5 });
+  const six = new StylizedTree({ seed: 9, complexity: 6 });
+  const low = new StylizedTree({ seed: 9, complexity: 6, lowPoly: true });
+  for (const t of [five, six, low]) {
+    assert.ok(t.children.length <= 3, 'still 3 draw calls');
+    assert.deepStrictEqual(t.getColliderTags(), ['trunk', 'crown']);
+    assert.deepStrictEqual(t.crown, one.crown, 'same crown envelope as the single-crown tree');
+  }
+  assert.ok(five._subCrowns.length >= 3 && six._subCrowns.length === 2 * five._subCrowns.length, 'limbs, then two twigs per limb');
+  assert.ok(Math.abs(six.cardCount - STYLIZED_CARDS[6]) <= six._subCrowns.length);
+  assert.ok(triangles(one) < triangles(five) && triangles(five) < triangles(six) && triangles(six) < 2000, `${triangles(five)} / ${triangles(six)}`);
+  assert.ok(triangles(low) * 2 < triangles(six), 'lowPoly is much cheaper');
+  const centres = (t) => { const a = cardMesh(t).geometry.attributes.cardCenter; const s = new Set(); for (let i = 0; i < a.count; i += 4) s.add(`${a.getX(i)},${a.getY(i)},${a.getZ(i)}`); return s; };
+  const all = centres(six);
+  assert.ok([...centres(low)].every((c) => all.has(c)), 'lowPoly cards are a subset of the full ones');
+  [one, five, six, low].forEach((t) => t.dispose());
+});
+
+test('StylizedTree stature: short and stout .. tall', () => {
+  const short = new StylizedTree({ seed: 4, stature: 0 }), tall = new StylizedTree({ seed: 4, stature: 1 });
+  const [ts, tt] = [short, tall].map((t) => t._shapes.find((c) => c.tag === 'trunk'));
+  assert.ok(tt.data.height > ts.data.height * 1.8 && tt.data.radius > ts.data.radius);
+  [short, tall].forEach((t) => t.dispose());
+});
+
+test('Forest complexity picks the 3D tree levels; sizeVariety spreads the variants', () => {
+  const opts = { seed: 6, count: 100, area: 80, variants: 6, treeType: 'stylized' };
+  const f = new Forest({ ...opts, complexity: 6 });
+  assert.deepStrictEqual(f.levels, [{ complexity: 6 }, { complexity: 6, lowPoly: true }]);
+  assert.deepStrictEqual(new Forest({ ...opts, count: 10, complexity: 99 }).levels[0], { complexity: 6 }, 'clamped');
+  assert.deepStrictEqual(new Forest({ ...opts, count: 10 }).levels, STYLIZED_FOREST_LEVELS);
+  assert.deepStrictEqual(new Forest({ seed: 6, count: 10, area: 40, variants: 1, complexity: 9 }).levels.map((l) => l.complexity), [9, 5]);
+  const tops = (forest) => forest._treeVariants.map((v) => v.top);
+  const spread = (a) => Math.max(...a) / Math.min(...a);
+  assert.ok(spread(tops(f)) > 1.3, `variants differ in height (${spread(tops(f))})`);
+  const scales = f.getPlacements().map((t) => t.scale);
+  assert.ok(Math.min(...scales) >= 0.7 && Math.max(...scales) <= 1.35 && spread(scales) > 1.6);
+  f.dispose();
+});
