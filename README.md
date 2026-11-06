@@ -6,7 +6,7 @@ A collection of 3D models created from simple ThreeJS geometries, for use in bro
 git submodule add https://github.com/DominikFelden/3JS-Models.git libs/3JS-Models
 ```
 ```js
-import { SimpleTree } from './libs/3JS-Models/src/index.js';
+import { SimpleTree } from './libs/3JS-Models/src/index.ts';
 scene.add(new SimpleTree());
 ```
 `three` (>= 0.170) and [`lamina`](https://www.npmjs.com/package/lamina) are peer dependencies: the host project provides them (`npm install three lamina`). Geometries, materials and textures are created once and shared by all instances.
@@ -125,12 +125,12 @@ oak.textureVariants();                                     // { bark: 3, foliage
 
 **Efficient by design.** The textures are made once, not per model: each kind is a [lamina](https://github.com/pmndrs/lamina) layer stack (a drawing layer, a seamless noise wash and paper grain) that is rendered into a texture per variant the first time a kind is needed, a few hundred milliseconds per kind even on a software renderer. Every model reuses those textures: its UVs are scaled when the geometry is merged, so a texture keeps the same size in the world whatever the size of the part, and there is still **one mesh and draw call per material**. To avoid a hiccup in the middle of a game, bake the pool while loading, ideally with the renderer you already have:
 ```js
-import { preloadTextures } from './libs/3JS-Models/src/index.js';
+import { preloadTextures } from './libs/3JS-Models/src/index.ts';
 await preloadTextures({ renderer, onProgress: (p, kind) => { bar.value = p; } }); // one kind per tick
 ```
 **Without WebGL** (Node, tests) nothing can be baked: models get plain colours (the average colour of their variant) and no UVs, shapes, colliders and seeds are unchanged, and `preloadTextures` resolves to `false`.
 
-The pool is also available for your own meshes (all exported from `src/index.js`):
+The pool is also available for your own meshes (all exported from `src/index.ts`):
 
 | Export | |
 |---|---|
@@ -146,7 +146,7 @@ To change the look, edit the palettes (`RECIPES`) and how a kind is laid on geom
 ## Placing models: position, size, rotation
 All models extend `WorldModel` (a `THREE.Group`) and take the same options:
 ```js
-import { PineTree, Rock, Castle } from './libs/3JS-Models/src/index.js';
+import { PineTree, Rock, Castle } from './libs/3JS-Models/src/index.ts';
 scene.add(new PineTree({ position: [4, 0, -2], size: 1.5, rotation: Math.PI / 3 }));
 scene.add(new Rock({ seed: 7, position: { x: 1, y: 0, z: 1 }, rotation: { x: 0, y: 1, z: 0 } }));
 scene.add(new Castle({ size: 2 }));
@@ -185,7 +185,7 @@ Foliage shapes are bounding shapes of the crown; whether to collide with them is
 2. Create geometry via `shared(key, factory)` and materials via `material(color, flat)` so they are reused. For textured surfaces use `this.surface(kind)` (e.g. `this.surface('bark')`): it returns the shared material of the texture variant this model picked for that kind (see [Textures](#textures)); pass `uv` to `MergeBuilder.add` if the default mapping of the kind does not fit a part.
 3. Add meshes with `addMesh()` (few, shared parts) or collect many parts in a `MergeBuilder` and call `builder.build(this)` (one mesh per material; use this for anything with dozens of parts). Add matching collision shapes with `addShape(type, data, position, rotation, tag)` (local space; `WorldModel` applies position/rotation/size).
 3b. Use `this.random()` / `this.rand(min, max)` for all randomness (never `Math.random()`), so `seed` makes the model reproducible; use `this.addWindow()` for windows. Texture picks come from a separate stream (`this.surface()` / `this.variant(kind)`), so choosing a texture never shifts the random numbers that shape the model.
-4. Export it from `src/index.js`, register it in `src/registry.js`, add a test.
+4. Export it from `src/index.ts`, register it in `src/registry.js`, add a test.
 
 ## Viewer
 ```

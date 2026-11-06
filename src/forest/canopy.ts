@@ -1,7 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, Color, Mesh } from 'three';
-import { pooledMaterial } from '../textures/pool.js';
-import { MAPPING } from '../textures/recipes.js';
-import { injectFadeFragment } from './fade.js';
+import { pooledMaterial } from '../textures/pool.ts';
+import { MAPPING } from '../textures/recipes.ts';
+import { injectFadeFragment } from './fade.ts';
 
 /** Most grid vertices per side of the canopy (keeps big forests cheap). */
 export const MAX_CANOPY_GRID = 257;
@@ -19,7 +19,7 @@ export const MAX_CANOPY_GRID = 257;
  *  - area: side of the square, cell: grid spacing, ground(x, z): height of the ground
  * Vertex colours: the colour of the tree owning the vertex, darker low in the canopy.
  */
-export function canopyGeometry(trees, crowns, colors, { area, cell, ground = () => 0 }) {
+export function canopyGeometry(trees, crowns, colors, { area, cell, ground = (_x: number, _z: number) => 0 }) {
   const maxR = crowns.reduce((m, c) => Math.max(m, c.radius), 0) * trees.reduce((m, t) => Math.max(m, t.scale), 1);
   const span = area + 2 * (maxR + cell);
   const n = Math.min(MAX_CANOPY_GRID, Math.max(2, Math.ceil(span / cell) + 1));

@@ -1,6 +1,6 @@
 import { IcosahedronGeometry } from 'three';
-import { WorldModel, shared, mulberry32 } from '../WorldModel.js';
-import { projectUV } from '../textures/uv.js';
+import { WorldModel, shared, mulberry32 } from '../WorldModel.ts';
+import { projectUV } from '../textures/uv.ts';
 
 /** Number of distinct rock shapes (bounds the shared geometry cache). */
 export const ROCK_VARIANTS = 64;
@@ -16,7 +16,8 @@ export const ROCK_VARIANTS = 64;
  * Collider: 'convex' hull = the displaced vertices (a rock is convex enough).
  */
 export class Rock extends WorldModel {
-  constructor(options = {}) {
+  declare seed: any;
+  constructor(options: any = {}) {
     super('Rock', options);
     const variant = this.seed % ROCK_VARIANTS;
     const mat = this.surface('rock', null, false);

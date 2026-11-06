@@ -3,7 +3,7 @@ import {
   RGBAFormat, UnsignedByteType, RepeatWrapping, ClampToEdgeWrapping, LinearFilter, LinearMipmapLinearFilter,
   NearestFilter, SRGBColorSpace, NoToneMapping,
 } from 'three';
-import { RECIPES, TEXTURE_VARIANTS, createRecipe } from './recipes.js';
+import { RECIPES, TEXTURE_VARIANTS, createRecipe } from './recipes.ts';
 
 const SRGB_TO_LINEAR = new Float32Array(256).map((_, i) => {
   const c = i / 255;
@@ -108,7 +108,7 @@ export function withBakeRenderer(renderer, fn) {
   try {
     return fn(priv);
   } finally {
-    releaseTimer = setTimeout(release, 1500);
+    releaseTimer = setTimeout(release, 1500) as any;
   }
 }
 

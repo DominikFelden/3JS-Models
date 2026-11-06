@@ -1,13 +1,14 @@
+// @ts-nocheck -- tests poke at untyped internals and three.js object subtypes
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { BufferAttribute, BufferGeometry, BoxGeometry, CylinderGeometry, DataTexture, DoubleSide, FrontSide, MeshStandardMaterial } from 'three';
 import {
   TEXTURE_KINDS, TEXTURE_VARIANTS, pickVariant, getTexture, pooledMaterial, preloadTextures, disposeTextures,
   PineTree, OakTree, LeafTree, Bush, Rock, House, Castle, Wall, Roof, Column, SimpleTree,
-} from '../src/index.js';
-import { WorldModel, MergeBuilder, mulberry32 } from '../src/WorldModel.js';
-import { projectUV } from '../src/textures/uv.js';
-import { RECIPES, MAPPING, fallbackColor } from '../src/textures/recipes.js';
+} from '../src/index.ts';
+import { WorldModel, MergeBuilder, mulberry32 } from '../src/WorldModel.ts';
+import { projectUV } from '../src/textures/uv.ts';
+import { RECIPES, MAPPING, fallbackColor } from '../src/textures/recipes.ts';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 
@@ -173,7 +174,7 @@ test('SimpleTree wears the first pooled bark and foliage', () => {
 });
 
 // A material shaped like a pooled one that has a real texture, as in the browser.
-function mapped(uv, { tile = 2, shift = [0, 0] } = {}) {
+function mapped(uv, { tile = 2, shift = [0, 0] }: any = {}) {
   const mat = new MeshStandardMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) });
   mat.userData.mapping = { uv, tile, shift, hash: 7 };
   return mat;

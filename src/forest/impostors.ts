@@ -4,8 +4,8 @@ import {
   RGBAFormat, UnsignedByteType, SRGBColorSpace, NoColorSpace, ClampToEdgeWrapping, LinearFilter,
   LinearMipmapLinearFilter, NearestFilter, NoToneMapping, DoubleSide,
 } from 'three';
-import { withBakeRenderer } from '../textures/bake.js';
-import { FADE_PARS, FADE_TEST } from './fade.js';
+import { withBakeRenderer } from '../textures/bake.ts';
+import { FADE_PARS, FADE_TEST } from './fade.ts';
 
 /**
  * Impostors: every tree variant is photographed once from many directions
@@ -148,7 +148,7 @@ export function atlasLayout(variants, size, maxTextureSize = 4096) {
  *  - frameSize: pixels per picture (default 128)
  * Returns { color, normal, cols, rows, frame, means: [Color] (linear average of each variant) }.
  */
-export function bakeImpostors(variants, { renderer = null, frameSize = 128 } = {}) {
+export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: any = {}) {
   return withBakeRenderer(renderer, (r) => {
     const layout = atlasLayout(variants.length, frameSize, r.capabilities.maxTextureSize);
     const { cols, frame: S, width: W, height: H } = layout;
@@ -181,7 +181,7 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 } = {
     const centre = new Vector3();
     const dir = new Vector3();
     try {
-      for (const [pass, rt] of [['color', colorTarget], ['normal', normalTarget]]) {
+      for (const [pass, rt] of [['color', colorTarget], ['normal', normalTarget]] as [string, any][]) {
         // Empty pixels get a neutral value so mipmaps do not bleed black (colour) or a wrong normal into the tree.
         if (pass === 'color') r.setClearColor(0x3a5a30, 0); else r.setClearColor(new Color().setRGB(0.5, 1, 0.5, NoColorSpace), 0);
         rt.scissorTest = true;

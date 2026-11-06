@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { rangeUniform, setRange, inRange, FAR } from '../src/forest/fade.js';
-import { coverageMipmaps, ALPHA_CUT, atlasLayout } from '../src/forest/impostors.js';
+import { rangeUniform, setRange, inRange, FAR } from '../src/forest/fade.ts';
+import { coverageMipmaps, ALPHA_CUT, atlasLayout } from '../src/forest/impostors.ts';
 
 test('fade ranges of neighbouring tiers overlap only in the dither band', () => {
   const a = rangeUniform(), b = rangeUniform();

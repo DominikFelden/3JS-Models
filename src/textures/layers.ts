@@ -1,7 +1,7 @@
 import { Vector3, Vector4 } from 'three';
 import { Abstract } from 'lamina/vanilla';
-import { VERT, UNIFORMS, HELPERS } from './glsl.js';
-import { BODIES } from './kinds.js';
+import { VERT, UNIFORMS, HELPERS } from './glsl.ts';
+import { BODIES } from './kinds.ts';
 
 const DEFAULTS = {
   u_seed: 0,
@@ -27,8 +27,9 @@ const NOISE_FN = {
  * `f_` identifiers per layer, so the shared helpers use an `HD_` placeholder
  * that is swapped for a name unique to each layer instance.
  */
-function makeLayer(name, glsl, uniforms = {}) {
-  class Layer extends Abstract {
+function makeLayer(name, glsl, uniforms: any = {}) {
+  class Layer extends (Abstract as any) {
+    declare seed: any;
     constructor(props) {
       super(Layer, { name, type: 'simplex', ...props }, (e) => {
         const unique = `hd${e.uuid}_`;

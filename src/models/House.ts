@@ -1,5 +1,5 @@
 import { BoxGeometry, ConeGeometry, Shape, ExtrudeGeometry } from 'three';
-import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.js';
+import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.ts';
 
 /** Available house types (value of the `type` option). */
 export const HOUSE_TYPES = ['cottage', 'longhouse', 'towerhouse'];
@@ -59,7 +59,9 @@ const SPECS = {
  * Windows: see `getWindows()`; they are not colliders.
  */
 export class House extends WorldModel {
-  constructor(options = {}) {
+  declare random: any;
+  declare type: any;
+  constructor(options: any = {}) {
     super('House', options);
     this.type = HOUSE_TYPES.includes(options.type) ? options.type : 'cottage';
     const spec = SPECS[this.type];

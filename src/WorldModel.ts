@@ -3,8 +3,8 @@ import {
   Float32BufferAttribute,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { pooledMaterial, pickVariant, TEXTURE_VARIANTS } from './textures/pool.js';
-import { projectUV, offsetUV } from './textures/uv.js';
+import { pooledMaterial, pickVariant, TEXTURE_VARIANTS } from './textures/pool.ts';
+import { projectUV, offsetUV } from './textures/uv.ts';
 
 const _p = new Vector3();
 const _q = new Quaternion();
@@ -72,6 +72,8 @@ const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a
  * by `WorldModel.dispose()`.
  */
 export class MergeBuilder {
+  declare _m: any;
+  declare _parts: any;
   constructor() {
     this._parts = new Map(); // material -> [BufferGeometry]
     this._m = new Matrix4();
@@ -92,9 +94,9 @@ export class MergeBuilder {
    *  - detail: pattern density factor, 2 draws the texture at half the size
    *           (for small models such as a bush). Default 1.
    */
-  add(geometry, mat, { position = [0, 0, 0], scale = [1, 1, 1], yaw = 0, quaternion = null, tint = 1, grime = false, uv = null, detail = 1 } = {}) {
+  add(geometry, mat, { position = [0, 0, 0], scale = [1, 1, 1], yaw = 0, quaternion = null, tint = 1, grime = false, uv = null, detail = 1 }: any = {}) {
     const q = quaternion ?? _q.setFromAxisAngle(_yAxis, yaw);
-    this._m.compose(_p.set(...position), q, _s.set(...scale));
+    this._m.compose(_p.set(...(position as [number, number, number])), q, _s.set(...(scale as [number, number, number])));
     let g = geometry.clone();
     const map = mat.userData.mapping;
     const mode = map && mat.map ? (uv ?? map.uv) : null;
@@ -194,7 +196,17 @@ export class MergeBuilder {
  * No physics is implemented here.
  */
 export class WorldModel extends Group {
-  constructor(name, options = {}) {
+  declare _doors: any;
+  declare _ownVariants: any;
+  declare _ownedGeometries: any;
+  declare _pickRandom: any;
+  declare _shapes: any;
+  declare _variants: any;
+  declare _windows: any;
+  declare options: any;
+  declare random: any;
+  declare seed: any;
+  constructor(name, options: any = {}) {
     super();
     this.name = name;
     this.options = options;
@@ -208,7 +220,7 @@ export class WorldModel extends Group {
     this._doors = [];             // door descriptions in model-local space
     this._ownedGeometries = [];   // non-shared geometries, freed by dispose()
     const { position, rotation, size = 1 } = options;
-    if (position) Array.isArray(position) ? this.position.set(...position) : this.position.copy(position);
+    if (position) Array.isArray(position) ? this.position.set(...(position as [number, number, number])) : this.position.copy(position);
     if (typeof rotation === 'number') this.rotation.y = rotation;
     else if (rotation) this.rotation.copy(rotation.isEuler ? rotation : new Euler(rotation.x || 0, rotation.y || 0, rotation.z || 0));
     this.scale.setScalar(size);
@@ -265,7 +277,7 @@ export class WorldModel extends Group {
   }
 
   /** Material of `kind` in the model's own-stream variant (see `ownVariant`), optionally recoloured. */
-  ownSurface(kind, color = null, options = {}) {
+  ownSurface(kind, color = null, options: any = {}) {
     return pooledMaterial(kind, this.ownVariant(kind), { color, flatShading: true, vertexColors: true, roughness: 0.95, ...options });
   }
 
@@ -282,8 +294,8 @@ export class WorldModel extends Group {
   /** Add a visual mesh using shared geometry and material. */
   addMesh(geometry, mat, position = [0, 0, 0], scale = [1, 1, 1]) {
     const m = new Mesh(geometry, mat);
-    m.position.set(...position);
-    m.scale.set(...scale);
+    m.position.set(...(position as [number, number, number]));
+    m.scale.set(...(scale as [number, number, number]));
     m.castShadow = m.receiveShadow = true;
     this.add(m);
     return m;
@@ -322,7 +334,7 @@ export class WorldModel extends Group {
       const pos = new Vector3(...position).applyMatrix4(this.matrixWorld);
       const q = _pq.clone();
       if (rotation) q.multiply(rotation);
-      const out = { type, position: pos.toArray(), quaternion: q.toArray() };
+      const out: any = { type, position: pos.toArray(), quaternion: q.toArray() };
       if (data.radius !== undefined) out.radius = data.radius * k;
       if (data.height !== undefined) out.height = data.height * k;
       if (data.size) out.size = data.size.map((v) => v * k);
@@ -355,7 +367,7 @@ export class WorldModel extends Group {
    * glassDoor (tall double door: no sill, `position` is its centre).
    * About a quarter of the windows are lit warmly (random per window).
    */
-  addWindow(builder, position, yaw, width = 0.6, height = 0.8, opts = {}) {
+  addWindow(builder, position, yaw, width = 0.6, height = 0.8, opts: any = {}) {
     const { arched = false, shutters = null, glassDoor = false } = opts;
     const box = shared('window:box', () => new BoxGeometry(1, 1, 1));
     const disc = shared('window:disc', () => {
@@ -397,7 +409,7 @@ export class WorldModel extends Group {
    * the wall surface. Planked leaf with iron straps and a handle, a framing
    * surround, a stone step, and an optional round top.
    */
-  addDoor(builder, position, yaw, width = 0.8, height = 1.5, opts = {}) {
+  addDoor(builder, position, yaw, width = 0.8, height = 1.5, opts: any = {}) {
     const { arched = false, frame = 0x8a857b, wood = 0x5a3b22 } = opts;
     const box = shared('window:box', () => new BoxGeometry(1, 1, 1));
     const disc = shared('window:disc', () => {

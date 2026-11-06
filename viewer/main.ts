@@ -4,8 +4,8 @@ import {
   PCFSoftShadowMap, ACESFilmicToneMapping, SRGBColorSpace,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { models } from '../src/registry.js';
-import { preloadTextures, getTexture, TEXTURE_VARIANTS } from '../src/textures/index.js';
+import { models } from '../src/registry.ts';
+import { preloadTextures, getTexture, TEXTURE_VARIANTS } from '../src/textures/index.ts';
 
 const scene = new Scene();
 scene.background = new Color(0xbfd9ee);
@@ -19,7 +19,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = PCFSoftShadowMap;
 renderer.toneMapping = ACESFilmicToneMapping;
 renderer.outputColorSpace = SRGBColorSpace;
-const view = document.getElementById('view');
+const view = document.getElementById('view') as any;
 view.appendChild(renderer.domElement);
 
 function resize() {
@@ -51,22 +51,22 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 let current = null;
 
-const select = document.getElementById('select');
-const search = document.getElementById('search');
-const noMatch = document.getElementById('noMatch');
-const slider = document.getElementById('complexity');
-const sliderValue = document.getElementById('complexityValue');
-const sliderRow = document.getElementById('complexityRow');
-const rerollButton = document.getElementById('reroll');
-const seedLabel = document.getElementById('seed');
-const dock = document.getElementById('dock');
-const modal = document.getElementById('modal');
-const modalRows = document.getElementById('modalRows');
-const paramsHint = document.getElementById('paramsHint');
-const texturesSection = document.getElementById('texturesSection');
-const textureRows = document.getElementById('textureRows');
-const paramsButton = document.getElementById('paramsButton');
-const loading = document.getElementById('loading');
+const select = document.getElementById('select') as any;
+const search = document.getElementById('search') as any;
+const noMatch = document.getElementById('noMatch') as any;
+const slider = document.getElementById('complexity') as any;
+const sliderValue = document.getElementById('complexityValue') as any;
+const sliderRow = document.getElementById('complexityRow') as any;
+const rerollButton = document.getElementById('reroll') as any;
+const seedLabel = document.getElementById('seed') as any;
+const dock = document.getElementById('dock') as any;
+const modal = document.getElementById('modal') as any;
+const modalRows = document.getElementById('modalRows') as any;
+const paramsHint = document.getElementById('paramsHint') as any;
+const texturesSection = document.getElementById('texturesSection') as any;
+const textureRows = document.getElementById('textureRows') as any;
+const paramsButton = document.getElementById('paramsButton') as any;
+const loading = document.getElementById('loading') as any;
 
 // Parameter values per model (kept when switching back) and the keys pinned below the 3D view.
 // A colour of `null` is "auto": the colours of the picked texture.
@@ -95,7 +95,7 @@ function show(reframe) {
   }
   // No seed given -> every build is a new random variation.
   current = entry.create({ complexity: Number(slider.value), seed, textures: { ...pins() }, renderer, ...values() });
-  [scene.fog.near, scene.fog.far] = entry.fog ?? FOG;
+  [(scene.fog as any).near, (scene.fog as any).far] = entry.fog ?? FOG;
   seed = current.seed; // later changes (sliders) modify this very model; Re-roll picks a new seed
   seedLabel.textContent = current.seed !== undefined ? `seed ${current.seed}` : '';
   scene.add(current);
@@ -147,11 +147,11 @@ function makeControl(def) {
 /** Store a value and update every control showing that key. */
 function setParam(key, value) {
   values()[key] = value;
-  document.querySelectorAll(`[data-key="${key}"]`).forEach((el) => {
+  document.querySelectorAll(`[data-key="${key}"]`).forEach((el: any) => {
     if (value !== null) el.value = value;
     if (el.type === 'range') el.nextElementSibling.textContent = Number(value).toFixed(2);
   });
-  document.querySelectorAll(`[data-auto="${key}"]`).forEach((el) => { el.checked = value === null; });
+  document.querySelectorAll(`[data-auto="${key}"]`).forEach((el: any) => { el.checked = value === null; });
 }
 
 /** Rebuild the dock (pinned controls) and the modal rows for the selected model. */
@@ -248,9 +248,9 @@ function randomize() {
 }
 
 paramsButton.addEventListener('click', () => { modal.style.display = 'flex'; renderTextures(); });
-document.getElementById('modalClose').addEventListener('click', () => { modal.style.display = 'none'; });
+(document.getElementById('modalClose') as any).addEventListener('click', () => { modal.style.display = 'none'; });
 modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-document.getElementById('randomize').addEventListener('click', randomize);
+(document.getElementById('randomize') as any).addEventListener('click', randomize);
 
 /** Show the slider only for models that support complexity, and set its range. */
 function configureSlider() {
@@ -268,7 +268,7 @@ function fillSelect() {
   const q = search.value.trim().toLowerCase();
   const previous = select.value;
   select.replaceChildren();
-  models.forEach((m, i) => { if (m.name.toLowerCase().includes(q)) select.add(new Option(m.name, i)); });
+  models.forEach((m, i) => { if (m.name.toLowerCase().includes(q)) select.add(new Option(m.name, String(i))); });
   noMatch.style.display = select.options.length ? 'none' : '';
   if ([...select.options].some((o) => o.value === previous)) select.value = previous;
   return select.value !== previous && select.options.length > 0;
@@ -288,7 +288,7 @@ rerollButton.addEventListener('click', randomize);
 configureSlider();
 renderParams();
 
-const statsBox = document.getElementById('stats');
+const statsBox = document.getElementById('stats') as any;
 /** FPS and draw load, shown for models that report `stats` (Forest) to judge performance on a phone. */
 function showStats(fps) {
   const st = current?.stats;
@@ -300,7 +300,7 @@ function showStats(fps) {
 
 /** Paint the shared texture pool with the viewer's own renderer (with progress), then show the first model. */
 async function start() {
-  const percent = document.getElementById('loadingPercent');
+  const percent = document.getElementById('loadingPercent') as any;
   try {
     await preloadTextures({ renderer, onProgress: (p) => { percent.textContent = `${Math.round(p * 100)}%`; } });
   } finally {

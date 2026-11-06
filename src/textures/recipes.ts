@@ -1,6 +1,6 @@
 import { Color } from 'three';
 import { LayerMaterial, Noise } from 'lamina/vanilla';
-import { TiledNoise, drawLayer } from './layers.js';
+import { TiledNoise, drawLayer } from './layers.ts';
 
 /** Number of ready-made textures per surface kind. */
 export const TEXTURE_VARIANTS = 5;
@@ -246,7 +246,7 @@ export function fallbackColor(kind, variant) {
   const { colors } = RECIPES[kind].variants[variant];
   const avg = [0, 0, 0];
   for (const c of colors) rgb(c).forEach((x, i) => { avg[i] += x / colors.length; });
-  return new Color().setRGB(...avg).convertSRGBToLinear();
+  return new Color().setRGB(...(avg as [number, number, number])).convertSRGBToLinear();
 }
 
 /**

@@ -3,23 +3,27 @@
   "version": "0.1.0",
   "description": "A collection of 3D models created from simple ThreeJS geometries.",
   "type": "module",
-  "main": "src/index.js",
+  "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "lamina": "^1.2.2",
     "three": ">=0.170.0"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
     "lamina": "^1.2.2",
     "three": "^0.170.0",
+    "typescript": "^7.0.2",
     "vite": "^5.4.0"
   }
 }
