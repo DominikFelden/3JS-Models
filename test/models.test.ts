@@ -343,7 +343,7 @@ test('Forest instances few variants, picks levels by distance and culls', () => 
   assert.strictEqual(f.getPlacements().length, 800);
   assert.deepStrictEqual(new Forest({ seed: 5, count: 800, area: 200, variants: 4 }).getPlacements(), f.getPlacements());
   const cam = new PerspectiveCamera(50, 1.5, 0.1, 1000);
-  cam.position.set(0, 5, 60);
+  cam.position.set(0, 5, 20);
   cam.lookAt(0, 3, 0);
   f.update(cam);
   const { visible, levels, drawCalls, triangles, impostors } = f.stats;
@@ -357,7 +357,7 @@ test('Forest instances few variants, picks levels by distance and culls', () => 
   f.invalidate();
   f.update(cam);
   assert.strictEqual(f.stats.visible, visible);
-  assert.ok(f.stats.triangles > triangles * 2, 'LOD saves triangles');
+  assert.ok(f.stats.triangles > triangles, 'LOD saves triangles');
   assert.ok(f.getColliders().length === 1);
   f.dispose();
 });
@@ -365,9 +365,9 @@ test('Forest instances few variants, picks levels by distance and culls', () => 
 test('Forest tiers: 3D levels, impostors, canopy, maxDistance', () => {
   const f = new Forest({ seed: 2, count: 600, area: 300, variants: 3 });
   const R = f.ranges();
-  assert.deepStrictEqual(R.levels, [[null, 25], [25, 50], [50, 80]]);
-  assert.deepStrictEqual(R.impostors, [80, 300]);
-  assert.deepStrictEqual(R.canopy, [300, Infinity]);
+  assert.deepStrictEqual(R.levels, [[null, 12], [12, 25]]);
+  assert.deepStrictEqual(R.impostors, [25, 600]);
+  assert.deepStrictEqual(R.canopy, [600, Infinity]);
   const cam = new PerspectiveCamera(50, 1.5, 0.1, 5000);
 
   // Every tree in the view is drawn by the tier its distance falls in (a brute-force check).
@@ -377,12 +377,12 @@ test('Forest tiers: 3D levels, impostors, canopy, maxDistance', () => {
   const all = f.getPlacements().map((t) => Math.hypot(t.x - cam.position.x, t.y - cam.position.y, t.z - cam.position.z));
   const band = (d, lo, hi) => d >= lo * (1 - f.fade / 2) && d < hi * (1 + f.fade / 2);
   assert.ok(f.stats.impostors > 0 && f.stats.visible > 0);
-  assert.ok(f.stats.impostors <= all.filter((d) => band(d, 80, 300)).length);
-  assert.ok(f.stats.visible <= all.filter((d) => d < 80 * (1 + f.fade / 2)).length);
+  assert.ok(f.stats.impostors <= all.filter((d) => band(d, 25, 600)).length);
+  assert.ok(f.stats.visible <= all.filter((d) => d < 25 * (1 + f.fade / 2)).length);
   assert.strictEqual(f.impostorMesh.geometry.instanceCount ?? f.impostorMesh.geometry.attributes.iPos.count, 600);
 
   // High above: everything is far, so only the canopy is drawn (one draw call).
-  cam.position.set(0, 500, 0);
+  cam.position.set(0, 1000, 0);
   cam.lookAt(0, 0, -50);
   f.update(cam);
   assert.strictEqual(f.stats.visible, 0);
@@ -392,7 +392,7 @@ test('Forest tiers: 3D levels, impostors, canopy, maxDistance', () => {
 
   // Without impostors the 3D trees reach the canopy; without the canopy nothing is drawn beyond maxDistance.
   const g = new Forest({ seed: 2, count: 600, area: 300, variants: 3, impostors: false, canopy: false, maxDistance: 120 });
-  assert.deepStrictEqual(g.ranges().levels.at(-1), [50, 120]);
+  assert.deepStrictEqual(g.ranges().levels.at(-1), [12, 120]);
   assert.strictEqual(g.ranges().canopy, null);
   cam.position.set(0, 5, 1000);
   cam.lookAt(0, 0, 0);
@@ -406,8 +406,8 @@ test('Forest tiers: 3D levels, impostors, canopy, maxDistance', () => {
 test('Forest detail scales the near tiers and adapts to the frame rate', () => {
   const f = new Forest({ seed: 3, count: 100, area: 60, variants: 2 });
   f.detail = 0.5;
-  assert.deepStrictEqual(f.ranges().levels, [[null, 12.5], [12.5, 25], [25, 40]]);
-  assert.deepStrictEqual(f.ranges().impostors, [40, 300]);
+  assert.deepStrictEqual(f.ranges().levels, [[null, 6], [6, 12.5]]);
+  assert.deepStrictEqual(f.ranges().impostors, [12.5, 600]);
   f.detail = 0;
   assert.strictEqual(f.detail, 0.2, 'clamped');
   f.detail = 1;

@@ -10,13 +10,12 @@ import { canopyGeometry, createCanopy } from './forest/canopy.ts';
 
 /**
  * Detail levels of the real (3D) forest trees. Level 0 is used close to the
- * camera, the last one up to `impostorDistance`. Lower complexity means far
- * fewer triangles; the leaves grow (`leafSize`) so the crown keeps its mass.
+ * camera, the last one up to `impostorDistance`. Leaf trees look bad below
+ * complexity 7, so real trees stay at 7+ and far trees are impostors.
  */
 export const FOREST_LEVELS = [
-  { complexity: 4, leafSize: 1 },
-  { complexity: 2, leafSize: 1.4 },
-  { complexity: 0, leafSize: 2 },
+  { complexity: 12, leafSize: 1 },
+  { complexity: 8, leafSize: 1 },
 ];
 
 const _m = new Matrix4();
@@ -66,9 +65,9 @@ function boxDistances(b, p) {
  *  - count: number of trees (default 1000), area: side of the square area, centred on the model (default 160; `size` stays the uniform scale of every model)
  *  - variants: distinct trees built (default 6), seed (as for every model: same seed, same forest)
  *  - levels: [{complexity, leafSize}] detail levels, best first (default `FOREST_LEVELS`)
- *  - lodDistances: distances where the next 3D level starts (default [25, 50]); `lod: false` keeps level 0 for all 3D trees
- *  - impostors: draw far trees as impostors (default true), impostorDistance (default 80), impostorResolution (pixels per picture, default 128)
- *  - canopy: draw the farthest part as a canopy surface (default true), canopyDistance (default 300)
+ *  - lodDistances: distances where the next 3D level starts (default [12]); `lod: false` keeps level 0 for all 3D trees
+ *  - impostors: draw far trees as impostors (default true), impostorDistance (default 25: where real trees end and impostors start), impostorResolution (pixels per picture, default 128)
+ *  - canopy: draw the farthest part as a canopy surface (default true), canopyDistance (default 600: where impostors end)
  *  - maxDistance: nothing is drawn beyond (default Infinity: use your camera's far plane / fog)
  *  - fade: width of the cross-fade band as a fraction of the distance (default 0.12, 0 = hard switch)
  *  - detail: factor (0.2 .. 1) on `lodDistances` and `impostorDistance`, see `adaptDetail()`
@@ -124,8 +123,8 @@ export class Forest extends WorldModel {
   constructor(options: any = {}) {
     super('Forest', options);
     const {
-      count = 1000, area = 160, variants = 6, levels = FOREST_LEVELS, lodDistances = [25, 50], lod = true,
-      impostors = true, impostorDistance = 80, impostorResolution = 128, canopy = true, canopyDistance = 300,
+      count = 1000, area = 160, variants = 6, levels = FOREST_LEVELS, lodDistances = [12], lod = true,
+      impostors = true, impostorDistance = 25, impostorResolution = 128, canopy = true, canopyDistance = 600,
       maxDistance = Infinity, fade = 0.12, detail = 1, chunkSize = 32,
       shadows = true, treeOptions = {}, heightAt = null, minScale = 0.8, maxScale = 1.25, renderer = null,
     } = options;

@@ -34,6 +34,8 @@ const ON_OFF = (key, label) => ({ key, label, type: 'select', value: 'on', optio
 const FOREST_PARAMS = (count, area) => [
   { key: 'count', label: 'Trees', type: 'range', min: 50, max: 60000, step: 50, value: count },
   { key: 'area', label: 'Area (side)', type: 'range', min: 40, max: 1500, step: 10, value: area },
+  { key: 'treeDistance', label: '3D tree range', type: 'range', min: 10, max: 100, step: 5, value: 25 },
+  { key: 'impostorDistance', label: 'Impostor range', type: 'range', min: 100, max: 1500, step: 50, value: 600 },
   ON_OFF('lod', 'Distance LOD'),
   ON_OFF('impostors', 'Impostors'),
   ON_OFF('canopy', 'Canopy'),
@@ -44,6 +46,7 @@ const FOREST_PARAMS = (count, area) => [
 function forest(o) {
   const f = new Forest({
     seed: o.seed, count: o.count, area: o.area, lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
+    impostorDistance: o.treeDistance, canopyDistance: o.impostorDistance,
     shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
   });
   (f as any).autoDetail = o.autoDetail !== 'off';
