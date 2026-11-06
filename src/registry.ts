@@ -1,6 +1,7 @@
 import { Box3, Vector3 } from 'three';
 import {
-  SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree, Forest,
+  SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree, StylizedTree, Forest,
+  MAX_STYLIZED_COMPLEXITY,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
   Wall, Door, Window, GlassDoor, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
   LEAF_TYPES,
@@ -32,6 +33,7 @@ const LEAF_TYPE_PARAM = {
  */
 const ON_OFF = (key, label) => ({ key, label, type: 'select', value: 'on', options: [['on', 'On'], ['off', 'Off']] });
 const FOREST_PARAMS = (count, area) => [
+  { key: 'treeType', label: 'Tree type', type: 'select', value: 'stylized', options: [['stylized', 'Stylized (cards)'], ['leaf', 'Leaf-Tree']] },
   { key: 'count', label: 'Trees', type: 'range', min: 50, max: 60000, step: 50, value: count },
   { key: 'area', label: 'Area (side)', type: 'range', min: 40, max: 1500, step: 10, value: area },
   { key: 'treeDistance', label: '3D tree range', type: 'range', min: 10, max: 100, step: 5, value: 25 },
@@ -45,7 +47,7 @@ const FOREST_PARAMS = (count, area) => [
 /** Forest from the viewer's options; `autoDetail` lets the viewer lower `detail` when the frame rate drops. */
 function forest(o) {
   const f = new Forest({
-    seed: o.seed, count: o.count, area: o.area, lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
+    seed: o.seed, count: o.count, area: o.area, treeType: o.treeType, lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
     impostorDistance: o.treeDistance, canopyDistance: o.impostorDistance,
     shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
   });
@@ -58,7 +60,8 @@ const unsorted = [
   { name: 'PineTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new PineTree(o) },
   { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new OakTree(o) },
   { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, params: [LEAF_TYPE_PARAM, ...TREE_PARAMS], create: (o) => new LeafTree(o) },
-  { name: 'Forest (Leaf-Tree)', params: FOREST_PARAMS(1000, 160), fog: [150, 1400], create: forest },
+  { name: 'Stylized-Tree', complexity: { max: MAX_STYLIZED_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new StylizedTree(o) },
+  { name: 'Forest', params: FOREST_PARAMS(1000, 160), fog: [150, 1400], create: forest },
   {
     name: 'Forest (fly-over)', params: FOREST_PARAMS(30000, 1000), fog: [200, 1600],
     create: (o) => {

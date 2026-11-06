@@ -1,6 +1,7 @@
 import { InstancedMesh, Matrix4, Quaternion, Vector3, Box3, Frustum, DynamicDrawUsage, Color } from 'three';
 import { WorldModel } from './WorldModel.ts';
 import { LeafTree } from './models/LeafTree.ts';
+import { StylizedTree } from './models/StylizedTree.ts';
 import { canBake } from './textures/bake.ts';
 import { TEXTURE_VARIANTS } from './textures/pool.ts';
 import { fallbackColor } from './textures/recipes.ts';
@@ -17,6 +18,21 @@ export const FOREST_LEVELS = [
   { complexity: 12, leafSize: 1 },
   { complexity: 8, leafSize: 1 },
 ];
+
+/**
+ * Detail levels of `StylizedTree` forests (`treeType: 'stylized'`): all leaf
+ * cards near the camera, fewer cards farther away (same crown shape).
+ */
+export const STYLIZED_FOREST_LEVELS = [
+  { complexity: 3 },
+  { complexity: 1 },
+];
+
+/** Tree models a Forest can be made of (`treeType`), with their default levels. */
+export const FOREST_TREE_TYPES = {
+  leaf: { Tree: LeafTree, levels: FOREST_LEVELS },
+  stylized: { Tree: StylizedTree, levels: STYLIZED_FOREST_LEVELS },
+};
 
 const _m = new Matrix4();
 const _inv = new Matrix4();
@@ -40,7 +56,7 @@ function boxDistances(b, p) {
 }
 
 /**
- * A forest of `LeafTree`s you can fly over: the illusion of a huge forest,
+ * A forest of `LeafTree`s (or `StylizedTree`s, see `treeType`) you can fly over: the illusion of a huge forest,
  * with real trees only where the player can see the difference.
  *
  * Tiers by distance from the camera (all distances in world units):
@@ -63,8 +79,9 @@ function boxDistances(b, p) {
  *
  * Options (all optional):
  *  - count: number of trees (default 1000), area: side of the square area, centred on the model (default 160; `size` stays the uniform scale of every model)
+ *  - treeType: 'leaf' (`LeafTree`, default) or 'stylized' (`StylizedTree`: blob core + leaf cards, far cheaper)
  *  - variants: distinct trees built (default 6), seed (as for every model: same seed, same forest)
- *  - levels: [{complexity, leafSize}] detail levels, best first (default `FOREST_LEVELS`)
+ *  - levels: [{complexity, leafSize}] detail levels, best first (default `FOREST_LEVELS`, or `STYLIZED_FOREST_LEVELS` for stylized trees)
  *  - lodDistances: distances where the next 3D level starts (default [12]); `lod: false` keeps level 0 for all 3D trees
  *  - impostors: draw far trees as impostors (default true), impostorDistance (default 25: where real trees end and impostors start), impostorResolution (pixels per picture, default 128)
  *  - canopy: draw the farthest part as a canopy surface (default true), canopyDistance (default 600: where impostors end)
@@ -73,7 +90,7 @@ function boxDistances(b, p) {
  *  - detail: factor (0.2 .. 1) on `lodDistances` and `impostorDistance`, see `adaptDetail()`
  *  - chunkSize: side of the culling chunks (default 32)
  *  - shadows: the nearest level casts shadows (default true)
- *  - treeOptions: passed to every `LeafTree` (leafType, trunkColor, textures, ...)
+ *  - treeOptions: passed to every tree (leafType, trunkColor, textures, ...)
  *  - textures: { canopy: 0..4 } pins the canopy texture (default: the leaf colourway of the first variant)
  *  - heightAt(x, z): ground height for each tree and the canopy (default flat 0)
  *  - minScale, maxScale: random tree size range (default 0.8 .. 1.25)
@@ -115,6 +132,7 @@ export class Forest extends WorldModel {
   declare impostors: any;
   declare lod: any;
   declare lodDistances: any;
+  declare treeType: any;
   declare maxDistance: any;
   declare random: any;
   declare seed: any;
@@ -123,12 +141,15 @@ export class Forest extends WorldModel {
   constructor(options: any = {}) {
     super('Forest', options);
     const {
-      count = 1000, area = 160, variants = 6, levels = FOREST_LEVELS, lodDistances = [12], lod = true,
+      count = 1000, area = 160, variants = 6, treeType = 'leaf', levels: levelsOption = null, lodDistances = [12], lod = true,
       impostors = true, impostorDistance = 25, impostorResolution = 128, canopy = true, canopyDistance = 600,
       maxDistance = Infinity, fade = 0.12, detail = 1, chunkSize = 32,
       shadows = true, treeOptions = {}, heightAt = null, minScale = 0.8, maxScale = 1.25, renderer = null,
     } = options;
     this.count = WorldModel.clampInt(count, 0, 200000, 1000);
+    this.treeType = FOREST_TREE_TYPES[treeType] ? treeType : 'leaf';
+    const { Tree, levels: defaultLevels } = FOREST_TREE_TYPES[this.treeType];
+    const levels = levelsOption ?? defaultLevels;
     this.areaSize = area;
     this.lodDistances = lodDistances;
     this.lod = lod;
@@ -164,7 +185,7 @@ export class Forest extends WorldModel {
       });
     }
 
-    // Variants x levels: build a real LeafTree, keep only its merged meshes (with fading copies of its materials).
+    // Variants x levels: build a real tree, keep only its merged meshes (with fading copies of its materials).
     this._levelRanges = levels.map(() => rangeUniform());
     this._fadeMaterials = new Map();
     const fadeOf = (mat, l) => {
@@ -180,7 +201,7 @@ export class Forest extends WorldModel {
       let crown = null;
       let sources = null;
       const lvls = levels.map((level, l) => {
-        const tree = new LeafTree({ ...treeOptions, seed, complexity: level.complexity, leafSize: (treeOptions.leafSize ?? 1) * (level.leafSize ?? 1) });
+        const tree = new Tree({ ...treeOptions, seed, complexity: level.complexity, leafSize: (treeOptions.leafSize ?? 1) * (level.leafSize ?? 1) });
         this._ownedGeometries.push(...tree._ownedGeometries);
         tree._ownedGeometries.length = 0;
         const srcMeshes = tree.children.filter((o: any) => o.isMesh) as any[];
@@ -189,7 +210,7 @@ export class Forest extends WorldModel {
           crown = tree._shapes.find((s) => s.tag === 'crown');
           if (v === 0) this._treeTextures = tree.textureVariants();
           this._leafVariants ??= [];
-          this._leafVariants[v] = tree.textureVariants().leaf;
+          this._leafVariants[v] = tree.textureVariants().leaf ?? tree.textureVariants().foliage;
         }
         const meshes = srcMeshes.map((src) => {
           const mesh = new InstancedMesh(src.geometry, fadeOf(src.material, l), perVariant[v]);
@@ -197,6 +218,7 @@ export class Forest extends WorldModel {
           mesh.count = 0;
           mesh.frustumCulled = false; // instances are culled one by one in update()
           mesh.castShadow = shadows && l === 0;
+          if (src.customDepthMaterial) mesh.customDepthMaterial = src.customDepthMaterial; // billboarded leaf cards
           mesh.receiveShadow = true;
           if (l === 0) { src.geometry.computeBoundingBox(); box.union(src.geometry.boundingBox); }
           return mesh;
@@ -209,7 +231,8 @@ export class Forest extends WorldModel {
       let r2 = 0;
       for (const src of sources) {
         const p = src.geometry.attributes.position;
-        for (let i = 0; i < p.count; i++) r2 = Math.max(r2, p.getX(i) ** 2 + (p.getY(i) - cy) ** 2 + p.getZ(i) ** 2);
+        const reach = src.geometry.userData.cardReach ?? 0; // leaf cards turn to the camera
+        for (let i = 0; i < p.count; i++) r2 = Math.max(r2, (Math.sqrt(p.getX(i) ** 2 + (p.getY(i) - cy) ** 2 + p.getZ(i) ** 2) + reach) ** 2);
       }
       const radius = Math.sqrt(r2) * 1.02;
       const spread = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z);
@@ -272,7 +295,7 @@ export class Forest extends WorldModel {
 
     // Canopy: one mesh over the crowns, wearing the canopy texture in the colourway of the leaves.
     const pinned = options.textures?.canopy ?? treeOptions.textures?.canopy;
-    const canopyVariant = Number.isInteger(pinned) && pinned >= 0 && pinned < TEXTURE_VARIANTS ? pinned : (this._treeTextures?.leaf ?? 0);
+    const canopyVariant = Number.isInteger(pinned) && pinned >= 0 && pinned < TEXTURE_VARIANTS ? pinned : (this._leafVariants?.[0] ?? 0);
     this._variants.canopy = canopyVariant;
     const spacing = area / Math.max(1, Math.sqrt(this.count));
     const canopyGeo = canopyGeometry(this._trees, this._treeVariants.map((tv) => tv.crown), this._variantColors, {

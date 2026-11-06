@@ -436,3 +436,72 @@ test('Forest canopy covers the trees at crown height and offers a canopy texture
   f.dispose();
   pinned.dispose();
 });
+
+import { StylizedTree, STYLIZED_CARDS, STYLIZED_FOREST_LEVELS } from '../src/index.ts';
+import { drawLeafClumps } from '../src/models/leafCards.ts';
+
+const cardMesh = (t) => t.children.find((m) => m.geometry?.attributes.cardCenter);
+const triangles = (t) => t.children.reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3, 0);
+
+test('StylizedTree: cheap blob core plus billboard leaf cards; lower complexities keep the same crown', () => {
+  const full = new StylizedTree({ seed: 9, complexity: 4 });
+  const mid = new StylizedTree({ seed: 9, complexity: 2 });
+  assert.deepStrictEqual(full.getColliderTags(), ['trunk', 'crown']);
+  assert.strictEqual(cardMesh(mid).geometry.attributes.cardCenter.count, STYLIZED_CARDS[2] * 4);
+  assert.strictEqual(cardMesh(new StylizedTree({ seed: 9, complexity: 0 })), undefined, 'complexity 0: blobs only');
+  const a = cardMesh(full).geometry.attributes.cardCenter.array, b = cardMesh(mid).geometry.attributes.cardCenter.array;
+  assert.deepStrictEqual(Array.from(a.slice(0, b.length)), Array.from(b), 'first cards are shared between levels');
+  assert.deepStrictEqual(new StylizedTree({ seed: 9, complexity: 2 }).getBounds(), mid.getBounds());
+  assert.ok(triangles(mid) < 1000, `few triangles (${triangles(mid)})`);
+  assert.ok(mid.children.length <= 3, 'bark, core, cards: 3 draw calls');
+  // Crown normals point away from the crown centre, so the crown is lit as one volume.
+  const g = cardMesh(mid).geometry, c = mid.crown.center;
+  for (let i = 0; i < g.attributes.normal.count; i += 4) {
+    const d = [g.attributes.cardCenter.getX(i) - c.x, g.attributes.cardCenter.getY(i) - c.y, g.attributes.cardCenter.getZ(i) - c.z];
+    assert.ok(d[0] * g.attributes.normal.getX(i) + d[1] * g.attributes.normal.getY(i) + d[2] * g.attributes.normal.getZ(i) > 0);
+  }
+  // Bounds hold the cards whichever way they turn.
+  g.computeBoundingSphere();
+  assert.ok(g.boundingSphere.radius >= g.userData.cardReach);
+  const big = new StylizedTree({ seed: 9, leafSize: 2 });
+  assert.ok(cardMesh(big).geometry.userData.cardReach > g.userData.cardReach * 1.8);
+  [full, mid, big].forEach((t) => t.dispose());
+});
+
+test('leaf-card clumps are cut-out pictures with ink outlines', () => {
+  const { data, size, mean } = drawLeafClumps(128);
+  const f = size / 2;
+  for (let q = 0; q < 4; q++) {
+    let inside = 0, ink = 0;
+    for (let y = 0; y < f; y++) for (let x = 0; x < f; x++) {
+      const i = ((Math.floor(q / 2) * f + y) * size + (q % 2) * f + x) * 4;
+      if (data[i + 3]) { inside++; if (data[i] < 100) ink++; }
+    }
+    assert.ok(inside / (f * f) > 0.3 && inside / (f * f) < 0.85, `clump ${q} covers part of its frame`);
+    assert.ok(ink > 0, `clump ${q} is inked`);
+  }
+  assert.ok(mean > 0.2 && mean < 1);
+});
+
+test('Forest of stylized trees: same tiers, far fewer triangles than leaf trees', () => {
+  const opts = { seed: 6, count: 400, area: 120, variants: 3 };
+  const s = new Forest({ ...opts, treeType: 'stylized' });
+  const l = new Forest(opts);
+  assert.strictEqual(s.treeType, 'stylized');
+  assert.deepStrictEqual(s.getPlacements(), l.getPlacements());
+  const cam = new PerspectiveCamera(50, 1.5, 0.1, 1000);
+  cam.position.set(0, 5, 20);
+  cam.lookAt(0, 3, 0);
+  s.update(cam);
+  l.update(cam);
+  assert.strictEqual(s.stats.visible, l.stats.visible > 0 ? s.stats.visible : 0);
+  assert.ok(s.stats.visible > 0 && s.stats.levels.every((n) => n > 0));
+  assert.ok(s.stats.drawCalls <= 3 * STYLIZED_FOREST_LEVELS.length * 3 + 2);
+  assert.ok(s.stats.triangles * 10 < l.stats.triangles, `${s.stats.triangles} vs ${l.stats.triangles}`);
+  assert.ok(Number.isInteger(s.textureVariants().canopy));
+  const cards = s.children.filter((m: any) => m.isInstancedMesh && m.geometry.attributes.cardCenter);
+  assert.ok(cards.length > 0 && cards.every((m: any) => m.customDepthMaterial), 'card shadows face the light');
+  assert.strictEqual(new Forest({ ...opts, count: 10, treeType: 'nope' }).treeType, 'leaf');
+  s.dispose();
+  l.dispose();
+});

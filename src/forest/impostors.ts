@@ -6,6 +6,7 @@ import {
 } from 'three';
 import { withBakeRenderer } from '../textures/bake.ts';
 import { FADE_PARS, FADE_TEST } from './fade.ts';
+import { BILLBOARD_ATTRIBUTES, BILLBOARD_VERTEX, injectBillboard } from './billboard.ts';
 
 /**
  * Impostors: every tree variant is photographed once from many directions
@@ -27,21 +28,45 @@ const SRGB_TO_LINEAR = new Float32Array(256).map((_, i) => {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 });
 
+// Normal pass of the bake: flat triangle normals in tree space, turned towards the camera (thin leaves are
+// double sided), or the smooth vertex normals for smooth materials (e.g. crowns lit as one volume).
+// Cut-out (alpha-tested) and billboarded leaf cards are cut and turned as in the colour pass.
 const NORMAL_VERT = /* glsl */ `
+#ifdef BILLBOARD
+${BILLBOARD_ATTRIBUTES}
+#endif
 varying vec3 vPos;
+varying vec3 vNormal;
+varying vec2 vUv;
 void main() {
-  vPos = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec3 transformed = position;
+#ifdef BILLBOARD
+${BILLBOARD_VERTEX}
+#endif
+  vPos = transformed;
+  vNormal = normal;
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
 }
 `;
 
-// Flat normal of the triangle in tree space, turned towards the camera (thin leaves are double sided).
 const NORMAL_FRAG = /* glsl */ `
 uniform vec3 uView;
+uniform sampler2D uMap;
+uniform float uAlphaTest;
 varying vec3 vPos;
+varying vec3 vNormal;
+varying vec2 vUv;
 void main() {
+#ifdef CUTOUT
+  if (texture2D(uMap, vUv).a < uAlphaTest) discard;
+#endif
+#ifdef SMOOTH
+  vec3 n = normalize(vNormal);
+#else
   vec3 n = normalize(cross(dFdx(vPos), dFdy(vPos)));
   if (dot(n, uView) < 0.0) n = -n;
+#endif
   gl_FragColor = vec4(n * 0.5 + 0.5, 1.0);
 }
 `;
@@ -159,15 +184,34 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: an
     });
     const colorTarget = target(SRGBColorSpace);
     const normalTarget = target(NoColorSpace);
-    const normalMat = new ShaderMaterial({ vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, uniforms: { uView: { value: new Vector3() } }, side: DoubleSide });
+    const uView = { value: new Vector3() };
     const basic = new Map();
+    const normals = new Map();
     const albedo = (m) => {
-      if (!basic.has(m)) basic.set(m, new MeshBasicMaterial({ map: m.map, color: m.color, vertexColors: m.vertexColors, side: m.side }));
+      if (!basic.has(m)) {
+        const b = new MeshBasicMaterial({ map: m.map, color: m.color, vertexColors: m.vertexColors, side: m.side, alphaTest: m.alphaTest });
+        if (m.userData.billboard) { b.onBeforeCompile = injectBillboard; b.customProgramCacheKey = () => 'leaf-card-basic'; }
+        basic.set(m, b);
+      }
       return basic.get(m);
+    };
+    const normalOf = (m) => {
+      const defines: any = {};
+      if (!m.flatShading) defines.SMOOTH = '';
+      if (m.map && m.alphaTest > 0) defines.CUTOUT = '';
+      if (m.userData.billboard) defines.BILLBOARD = '';
+      const key = `${Object.keys(defines).join(',')}:${'CUTOUT' in defines ? `${m.map.uuid}:${m.alphaTest}` : ''}`;
+      if (!normals.has(key)) {
+        normals.set(key, new ShaderMaterial({
+          vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, defines, side: DoubleSide,
+          uniforms: { uView, uMap: { value: m.map }, uAlphaTest: { value: m.alphaTest } },
+        }));
+      }
+      return normals.get(key);
     };
     const groups = variants.map(({ meshes }) => meshes.map((src) => {
       const color = new Mesh(src.geometry, albedo(src.material));
-      const normal = new Mesh(src.geometry, normalMat);
+      const normal = new Mesh(src.geometry, normalOf(src.material));
       color.frustumCulled = normal.frustumCulled = false;
       scene.add(color, normal);
       return { color, normal };
@@ -206,7 +250,7 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: an
               if (e === IMPOSTOR_ELEVATIONS - 1) camera.up.set(-Math.sin(a), 0, -Math.cos(a)); else camera.up.set(0, 1, 0);
               camera.lookAt(centre);
               camera.updateMatrixWorld();
-              normalMat.uniforms.uView.value.copy(dir);
+              uView.value.copy(dir);
               rt.viewport.set(x0, y0, S, S);
               rt.scissor.set(x0, y0, S, S);
               r.setRenderTarget(rt);
@@ -233,7 +277,7 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: an
       r.setClearColor(saved.clearColor, saved.clearAlpha);
       colorTarget.dispose();
       normalTarget.dispose();
-      normalMat.dispose();
+      normals.forEach((m) => m.dispose());
       basic.forEach((m) => m.dispose());
     }
   });
