@@ -1,7 +1,8 @@
 import { InstancedMesh, Matrix4, Quaternion, Vector3, Box3, Frustum, DynamicDrawUsage, Color } from 'three';
 import { WorldModel } from './WorldModel.ts';
 import { LeafTree } from './models/LeafTree.ts';
-import { StylizedTree } from './models/StylizedTree.ts';
+import { StylizedTree, MAX_STYLIZED_COMPLEXITY } from './models/StylizedTree.ts';
+import { MAX_TREE_COMPLEXITY } from './models/branching.ts';
 import { canBake } from './textures/bake.ts';
 import { TEXTURE_VARIANTS } from './textures/pool.ts';
 import { fallbackColor } from './textures/recipes.ts';
@@ -20,18 +21,29 @@ export const FOREST_LEVELS = [
 ];
 
 /**
- * Detail levels of `StylizedTree` forests (`treeType: 'stylized'`): all leaf
- * cards near the camera, fewer cards farther away (same crown shape).
+ * Detail levels of a `StylizedTree` forest of `complexity` (0..6): the full
+ * tree near the camera, a `lowPoly` copy of it (same shape, ~2.5x fewer
+ * triangles) farther away.
  */
-export const STYLIZED_FOREST_LEVELS = [
-  { complexity: 3 },
-  { complexity: 1 },
-];
+export const stylizedForestLevels = (complexity) => [{ complexity }, { complexity, lowPoly: true }];
 
-/** Tree models a Forest can be made of (`treeType`), with their default levels. */
+/** Default detail levels of `StylizedTree` forests (`treeType: 'stylized'`): branching trees (complexity 5). */
+export const STYLIZED_FOREST_LEVELS = stylizedForestLevels(5);
+
+/**
+ * Tree models a Forest can be made of (`treeType`), with their default levels,
+ * the highest complexity and the levels for a chosen `complexity`.
+ */
 export const FOREST_TREE_TYPES = {
-  leaf: { Tree: LeafTree, levels: FOREST_LEVELS },
-  stylized: { Tree: StylizedTree, levels: STYLIZED_FOREST_LEVELS },
+  leaf: { Tree: LeafTree, levels: FOREST_LEVELS, max: MAX_TREE_COMPLEXITY, stature: false, levelsFor: (c) => [{ complexity: c }, { complexity: Math.max(0, c - 4) }] },
+  stylized: { Tree: StylizedTree, levels: STYLIZED_FOREST_LEVELS, max: MAX_STYLIZED_COMPLEXITY, levelsFor: stylizedForestLevels, stature: true },
+};
+
+/** Small integer hash -> [0, 1). */
+const hash01 = (n) => {
+  let h = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return ((h ^ (h >>> 16)) >>> 0) / 0x100000000;
 };
 
 const _m = new Matrix4();
@@ -45,6 +57,9 @@ const _frustum = new Frustum();
 const _pv = new Matrix4();
 const _yAxis = new Vector3(0, 1, 0);
 const _sphere: any = { center: new Vector3(), radius: 0 };
+
+/** Triangular distribution on [0, 1] from one uniform draw: middle sizes common, extremes rare. */
+const triangular = (u) => (u < 0.5 ? Math.sqrt(2 * u) / 2 : 1 - Math.sqrt(2 * (1 - u)) / 2);
 
 const trianglesOf = (mesh) => (mesh.geometry.index ? mesh.geometry.index.count : mesh.geometry.attributes.position.count) / 3;
 
@@ -81,7 +96,10 @@ function boxDistances(b, p) {
  *  - count: number of trees (default 1000), area: side of the square area, centred on the model (default 160; `size` stays the uniform scale of every model)
  *  - treeType: 'leaf' (`LeafTree`, default) or 'stylized' (`StylizedTree`: blob core + leaf cards, far cheaper)
  *  - variants: distinct trees built (default 6), seed (as for every model: same seed, same forest)
- *  - levels: [{complexity, leafSize}] detail levels, best first (default `FOREST_LEVELS`, or `STYLIZED_FOREST_LEVELS` for stylized trees)
+ *  - complexity: complexity of the nearest 3D trees (stylized 0..6, leaf 0..MAX_TREE_COMPLEXITY); the farther level follows
+ *    from it (stylized: the same tree `lowPoly`, leaf: complexity - 4). Default: the type's default levels
+ *  - levels: [{complexity, leafSize, lowPoly}] detail levels, best first (overrides `complexity`; default `FOREST_LEVELS`,
+ *    or `STYLIZED_FOREST_LEVELS` for stylized trees)
  *  - lodDistances: distances where the next 3D level starts (default [12]); `lod: false` keeps level 0 for all 3D trees
  *  - impostors: draw far trees as impostors (default true), impostorDistance (default 25: where real trees end and impostors start), impostorResolution (pixels per picture, default 128)
  *  - canopy: draw the farthest part as a canopy surface (default true), canopyDistance (default 600: where impostors end)
@@ -93,7 +111,9 @@ function boxDistances(b, p) {
  *  - treeOptions: passed to every tree (leafType, trunkColor, textures, ...)
  *  - textures: { canopy: 0..4 } pins the canopy texture (default: the leaf colourway of the first variant)
  *  - heightAt(x, z): ground height for each tree and the canopy (default flat 0)
- *  - minScale, maxScale: random tree size range (default 0.8 .. 1.25)
+ *  - minScale, maxScale: random tree size range (default 0.7 .. 1.35, medium sizes most common)
+ *  - sizeVariety: how much the variants differ in trunk height and thickness (default 1, 0 = as the seeds make them):
+ *    the variants are spread over tall and slender, short and stout trees, so the forest is no plantation
  *  - renderer: your WebGLRenderer, used to bake the impostors (otherwise a temporary one is used)
  *
  * Without WebGL (Node) nothing is baked: impostors have no pictures, the rest
@@ -133,6 +153,7 @@ export class Forest extends WorldModel {
   declare lod: any;
   declare lodDistances: any;
   declare treeType: any;
+  declare levels: any;
   declare maxDistance: any;
   declare random: any;
   declare seed: any;
@@ -141,15 +162,18 @@ export class Forest extends WorldModel {
   constructor(options: any = {}) {
     super('Forest', options);
     const {
-      count = 1000, area = 160, variants = 6, treeType = 'leaf', levels: levelsOption = null, lodDistances = [12], lod = true,
+      count = 1000, area = 160, variants = 6, treeType = 'leaf', complexity = null, levels: levelsOption = null, lodDistances = [12], lod = true,
       impostors = true, impostorDistance = 25, impostorResolution = 128, canopy = true, canopyDistance = 600,
       maxDistance = Infinity, fade = 0.12, detail = 1, chunkSize = 32,
-      shadows = true, treeOptions = {}, heightAt = null, minScale = 0.8, maxScale = 1.25, renderer = null,
+      shadows = true, treeOptions = {}, heightAt = null, minScale = 0.7, maxScale = 1.35, sizeVariety = 1, renderer = null,
     } = options;
     this.count = WorldModel.clampInt(count, 0, 200000, 1000);
     this.treeType = FOREST_TREE_TYPES[treeType] ? treeType : 'leaf';
-    const { Tree, levels: defaultLevels } = FOREST_TREE_TYPES[this.treeType];
-    const levels = levelsOption ?? defaultLevels;
+    const type = FOREST_TREE_TYPES[this.treeType];
+    const { Tree } = type;
+    const levels = levelsOption
+      ?? (complexity === null || complexity === undefined ? type.levels : type.levelsFor(WorldModel.clampInt(complexity, 0, type.max, type.levels[0].complexity)));
+    this.levels = levels;
     this.areaSize = area;
     this.lodDistances = lodDistances;
     this.lod = lod;
@@ -181,7 +205,7 @@ export class Forest extends WorldModel {
       const variant = Math.floor(rnd() * nVariants);
       perVariant[variant]++;
       this._trees.push({
-        x, y: heightAt ? heightAt(x, z) : 0, z, yaw: rnd() * Math.PI * 2, scale: minScale + rnd() * (maxScale - minScale), variant,
+        x, y: heightAt ? heightAt(x, z) : 0, z, yaw: rnd() * Math.PI * 2, scale: minScale + triangular(rnd()) * (maxScale - minScale), variant,
       });
     }
 
@@ -195,13 +219,27 @@ export class Forest extends WorldModel {
     };
     this._treeVariants = [];
     const bakeInput = [];
+    const variety = Math.max(0, Number(sizeVariety) || 0);
+    const offset = hash01(this.seed);
     for (let v = 0; v < nVariants; v++) {
       const seed = (this.seed + Math.imul(v + 1, 0x9e3779b1)) >>> 0;
+      // Size class of the variant: spread evenly (golden ratio) from short and stout to tall. Stylized
+      // trees take it as their `stature`, other trees as factors on trunk height and thickness.
+      const cls = (offset + v * 0.618034) % 1;
+      let sized: any = {};
+      if (variety > 0 && type.stature) sized = { stature: 0.5 + variety * (cls - 0.5) };
+      else if (variety > 0) {
+        const tall = 1 + variety * (cls * 0.7 - 0.3);
+        sized = {
+          trunkHeight: (treeOptions.trunkHeight ?? 1) * tall,
+          trunkThickness: (treeOptions.trunkThickness ?? 1) * Math.sqrt(tall) * (1 + variety * (hash01(seed) * 0.45 - 0.2)),
+        };
+      }
       const box = new Box3();
       let crown = null;
       let sources = null;
       const lvls = levels.map((level, l) => {
-        const tree = new Tree({ ...treeOptions, seed, complexity: level.complexity, leafSize: (treeOptions.leafSize ?? 1) * (level.leafSize ?? 1) });
+        const tree = new Tree({ ...treeOptions, ...level, ...sized, seed, leafSize: (treeOptions.leafSize ?? 1) * (level.leafSize ?? 1) });
         this._ownedGeometries.push(...tree._ownedGeometries);
         tree._ownedGeometries.length = 0;
         const srcMeshes = tree.children.filter((o: any) => o.isMesh) as any[];
