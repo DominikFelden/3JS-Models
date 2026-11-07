@@ -29,7 +29,6 @@ scene.add(new SimpleTree());
 | `Well`, `Windmill` (`setSailAngle`, `animate`), `Watchtower`, `Bridge`, `Fence` (`FENCE_STYLES`), `Signpost`, `MarketStall`, `Tent` (`TENT_STYLES`), `Mine` | size/style options, `seed` | Settlement pieces (`src/models/Settlement.ts`) | per model |
 | `WizardTower`, `Temple`, `Obelisk`, `Portal`, `Ruins` (`complexity` 0-4), `Gravestone`, `Shrine`, `Pyramid` | size options, `seed` | Fantasy structures (`src/models/Structures.ts`) | per model |
 | `Campfire`, `Torch`, `Lantern`, `Chest`, `Barrel`, `Crate`, `Banner`, `Cart`, `Anvil`, `Table`, `Chair`, `Bed` | size options, `lit`/`open`, `seed` | Props (`src/models/Props.ts`) | per model |
-| `Villager`, `Knight`, `Wizard`, `Skeleton`, `Horse`, `Wolf`, `Dragon`, `Slime` | `pose`, `tint`, `seed` | Low-poly creatures; `limbs` (named pivot groups), `setPose(preset or {limb: [rx,ry,rz]})`, `animate(time, speed, amount)`. Colliders are static | one or few shapes |
 | `Mushroom`, `GiantMushroom`, `Cactus`, `PalmTree`, `Stump`, `Log`, `Reeds`, `Pumpkin`, `Rowboat`, `Ship` | size options, `seed` | Flora and boats (`src/models/Flora.ts`) | per model |
 
 `Forest` (`src/Forest.js`) builds thousands of `LeafTree`s (or, with `treeType: 'stylized'`, `StylizedTree`s) cheaply enough to fly over on a phone. Only the nearest trees are real 3D trees; farther away the forest is an illusion, in tiers chosen per tree by its distance:

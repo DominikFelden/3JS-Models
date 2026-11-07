@@ -22,5 +22,4 @@ export { Mountain, Hill, Cliff, CaveEntrance, Pond, Waterfall, Crystal, IceSpire
 export { Well, Windmill, Watchtower, Bridge, FENCE_STYLES, Fence, Signpost, MarketStall, TENT_STYLES, Tent, Mine } from './models/Settlement.ts';
 export { WizardTower, Temple, Obelisk, Portal, Ruins, Gravestone, Shrine, Pyramid } from './models/Structures.ts';
 export { Campfire, Torch, Lantern, Chest, Barrel, Crate, Banner, Cart, Anvil, Table, Chair, Bed } from './models/Props.ts';
-export { Creature, Villager, Knight, Wizard, Horse, Wolf, Dragon, Slime, Skeleton } from './models/Creatures.ts';
 export { Mushroom, GiantMushroom, Cactus, PalmTree, Stump, Log, Reeds, Pumpkin, Rowboat, Ship } from './models/Flora.ts';
