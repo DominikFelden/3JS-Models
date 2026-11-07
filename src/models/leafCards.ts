@@ -102,7 +102,13 @@ export function leafCardMaterial(color) {
       color: new Color(Math.min(3, color.r * k), Math.min(3, color.g * k), Math.min(3, color.b * k)),
       map: tex, alphaTest: ALPHA_CUT, vertexColors: true, roughness: 1, side: DoubleSide,
     });
-    mat.onBeforeCompile = injectBillboard;
+    mat.onBeforeCompile = (shader) => {
+      injectBillboard(shader);
+      // No specular: a card faces the camera but carries the crown's normal, so seen from below
+      // (normal away from the viewer) the grazing Fresnel sheen would wash its leaves out to white.
+      shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>',
+        '#include <lights_fragment_end>\nreflectedLight.directSpecular = vec3(0.0);\nreflectedLight.indirectSpecular = vec3(0.0);');
+    };
     mat.customProgramCacheKey = () => 'leaf-card';
     mat.userData.billboard = true;
     return mat;
