@@ -84,7 +84,9 @@ export class MergeBuilder {
    * opts: position [x,y,z], scale [x,y,z], yaw (radians around Y) or
    * quaternion (THREE.Quaternion). If both are given, quaternion wins.
    * Extras for textured / vertex-coloured materials:
-   *  - tint:  brightness number or [r,g,b] multiplier baked into vertex colours
+   *  - tint:  brightness number or [r,g,b] multiplier baked into vertex colours,
+   *           or a function (x, y, z) => number | [r,g,b] of the model-space
+   *           vertex position (strata, darker tunnel depths, ...)
    *  - grime: darken (and slightly green) the lowest ~2.5 units, like dirt and moss
    *  - uv:    how a pooled texture is laid on this part so it keeps a constant
    *           world size: 'face' | 'world' (projected from the triangles) or
@@ -135,10 +137,15 @@ export class MergeBuilder {
   }
 
   _colour(g, tint, grime) {
-    const t = typeof tint === 'number' ? [tint, tint, tint] : tint;
+    const fn = typeof tint === 'function' ? tint : null;
+    let t = typeof tint === 'number' ? [tint, tint, tint] : tint;
     const pos = g.attributes.position;
     const col = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
+      if (fn) {
+        const v = fn(pos.getX(i), pos.getY(i), pos.getZ(i));
+        t = typeof v === 'number' ? [v, v, v] : v;
+      }
       const k = grime ? 0.7 + 0.3 * smooth(0, 2.5, pos.getY(i)) : 1;
       const low = 1 - k;
       col[i * 3] = t[0] * k;

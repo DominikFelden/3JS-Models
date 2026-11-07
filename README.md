@@ -25,9 +25,9 @@ scene.add(new SimpleTree());
 | `Castle` | `complexity` 0-5 (default 1), `seed` | Keep, curtain walls, towers, gates, halls, windows (see below) | `keep`, `tower`, `roof`, `wall`, `hall`, `turret` |
 | `Wall`, `Door`, `Window`, `GlassDoor` ("Glass Door", tall window leading to a balcony), `Column`, `Roof` (`type`: gable/hip/flat), `Chimney`, `Stairs`, `Railing`, `Balcony` | size options, `seed` | Building parts, each a standalone model usable as a building block | one shape each |
 | `Grass`, `BirdsNest`, `Flower` | `seed` | Plant parts | one shape each |
-| `Mountain`, `Hill`, `Cliff`, `CaveEntrance`, `Pond`, `Waterfall`, `Crystal`, `IceSpire` | size options (`height`, `radius`, `peaks`, `count`, ...), `seed` | Landscape pieces (`src/models/Landscape.ts`) | per model |
+| `Mountain`, `Hill`, `Cliff`, `CaveEntrance`, `Pond`, `Waterfall`, `Crystal` (`crystals`: one mesh per crystal), `IceSpire` | size options (`height`, `radius`, `peaks`, `count`, ...), `seed` | Landscape pieces (`src/models/Landscape.ts`) | per model |
 | `Well`, `Windmill` (`setSailAngle`, `animate`), `Watchtower`, `Bridge`, `Fence` (`FENCE_STYLES`), `Signpost`, `MarketStall`, `Tent` (`TENT_STYLES`), `Mine` | size/style options, `seed` | Settlement pieces (`src/models/Settlement.ts`) | per model |
-| `WizardTower`, `Temple`, `Obelisk`, `Portal`, `Ruins` (`complexity` 0-4), `Gravestone`, `Shrine`, `Pyramid` | size options, `seed` | Fantasy structures (`src/models/Structures.ts`) | per model |
+| `WizardTower`, `Temple`, `Obelisk`, `Portal` (the swirl mesh has `userData.portalSwirl`, spin it for animation), `Ruins` (`complexity` 0-4), `Gravestone`, `Shrine`, `Pyramid` | size options, `seed` | Fantasy structures (`src/models/Structures.ts`) | per model |
 | `Campfire`, `Torch`, `Lantern`, `Chest`, `Barrel`, `Crate`, `Banner`, `Cart`, `Anvil`, `Table`, `Chair`, `Bed` | size options, `lit`/`open`, `seed` | Props (`src/models/Props.ts`) | per model |
 | `Mushroom`, `GiantMushroom`, `Cactus`, `PalmTree`, `Stump`, `Log`, `Reeds`, `Pumpkin`, `Rowboat`, `Ship` | size options, `seed` | Flora and boats (`src/models/Flora.ts`) | per model |
 
@@ -105,7 +105,7 @@ Proportions, wall and roof colours and window layout vary per instance. The door
 Trees, houses and castles own merged geometries (shared unit geometries are never freed). Call `model.dispose()` when you permanently remove one, e.g. when the viewer rebuilds a model. Not calling it only leaks memory; it never breaks rendering. Textures and their materials are shared by all models and are not freed by `dispose()`; call `disposeTextures()` when a whole world is discarded.
 
 ## Textures
-Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 15 kinds with 5 variants each, every one a seamless 256 × 256 picture with ink outlines, hatching, a watercolour wash and paper grain. The pool needs about 22.5 MB of GPU memory however many models you create, and all models wearing a variant share one material.
+Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 18 kinds with 5 variants each, every one a seamless 256 × 256 picture with ink outlines, hatching, a watercolour wash and paper grain. The pool needs about 27 MB of GPU memory however many models you create, and all models wearing a variant share one material.
 
 | Kind | Painted on | The 5 variants |
 |---|---|---|
@@ -119,6 +119,9 @@ Surfaces wear a **fixed pool of hand-drawn textures** that every model shares: 1
 | `shingle` | roofs | red, slate blue, brown, green, terracotta |
 | `glass` | window panes: diagonal reflections and pen hatching | blue, teal, grey-blue, green, violet |
 | `lamp` | the warmly lit windows | amber, gold, orange, pale yellow, ruddy |
+| `grass` | turf on hills, mountains, cliffs, ponds and graves: painted blades with tiny flowers | meadow (white flowers), dark green (yellow), olive (pink), blue-green (blue, rarer), dry (rarer) |
+| `cloth` | banners, bedding, sacks, sails, tents and awnings: woven canvas | canvas, red, blue, striped canvas, green |
+| `water` | ponds, waterfalls and pools: ripples and highlights | blue, teal, deep blue, pond green, tropical |
 
 **Random pick.** A model picks one variant per kind from its `seed` (same seed, same textures) and wears it on all its parts, so one tree has one kind of bark. The pick uses its own random stream, so it never changes a model's shape: every seed builds the same shapes as before textures existed. Pin variants with the `textures` option (unknown kinds and invalid numbers are ignored):
 ```js
@@ -140,10 +143,10 @@ The pool is also available for your own meshes (all exported from `src/index.ts`
 
 | Export | |
 |---|---|
-| `TEXTURE_KINDS`, `TEXTURE_VARIANTS` | the 15 kind names and the number of variants (5) |
+| `TEXTURE_KINDS`, `TEXTURE_VARIANTS` | the 18 kind names and the number of variants (5) |
 | `pickVariant(kind, random?, allowed?)` | a variant number, weighted (autumn and teal foliage are rarer). Pass a seeded random function for a reproducible pick; `allowed` limits the choice to some variants |
 | `getTexture(kind, variant)` | the shared `Texture` (`null` without WebGL) |
-| `pooledMaterial(kind, variant, { color, flatShading, vertexColors, roughness })` | the shared `MeshStandardMaterial` wearing it; the same arguments always return the same instance |
+| `pooledMaterial(kind, variant, { color, flatShading, vertexColors, roughness, opacity })` | the shared `MeshStandardMaterial` wearing it; the same arguments always return the same instance. `opacity` below 1 makes it transparent (water) |
 | `preloadTextures({ kinds, renderer, onProgress })` | bake now (async), see above |
 | `disposeTextures()` | free all pooled textures and materials |
 
@@ -206,7 +209,7 @@ Open the printed URL and pick a model in the menu. While the shared textures are
 ## Realism tricks
 
 - **Denser foliage:** oaks get a cluster of overlapping blobs on every branch tip and fork, pines stacked needle skirts; bushes are 8 blobs (sometimes with berries).
-- **Vertex colours:** every part gets its own random tint (leaves lighter at the top, stone per block), baked into the merged mesh, so there is no extra draw call. `MergeBuilder.add` accepts `tint`, `grime` (darker, mossy near the ground), `uv` (how a texture is laid on the part) and `detail` (pattern density, for small parts).
+- **Vertex colours:** every part gets its own random tint (leaves lighter at the top, stone per block), baked into the merged mesh, so there is no extra draw call. `MergeBuilder.add` accepts `tint` (a number, an `[r, g, b]` multiplier or a function `(x, y, z) => number | [r, g, b]` evaluated per vertex in model space, e.g. for stripes, moss on top or darkening into a tunnel), `grime` (darker, mossy near the ground), `uv` (how a texture is laid on the part) and `detail` (pattern density, for small parts).
 - **Hand-drawn textures:** all stone, brick, plaster, wood, bark, foliage and roof surfaces use the shared texture pool (see [Textures](#textures)); under Node they are plain colours.
 - **Details:** merlons, plinths, string courses, chimneys, timber framing, stone foundations, root flares, roof ridge caps, flags.
 - **Viewer:** soft shadows, hemisphere sky light, fog, tone mapping and a grass ground. All models cast/receive shadows.

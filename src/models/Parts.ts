@@ -1,5 +1,7 @@
 import { BoxGeometry, CylinderGeometry, ConeGeometry, SphereGeometry, ExtrudeGeometry, Shape, Vector2 } from 'three';
-import { Vector3 } from 'three';
+import { Vector3, Quaternion } from 'three';
+
+const up = () => new Vector3(0, 1, 0);
 import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.ts';
 
 /**
@@ -215,18 +217,42 @@ export class BirdsNest extends WorldModel {
   constructor({ eggs = 3, ...o }: any = {}) {
     super('BirdsNest', o);
     const b = new MergeBuilder();
-    const twig = material(0x6e5233, true, true);
-    for (let i = 0; i < 30; i++) {
-      const a = this.rand(0, Math.PI * 2), r = this.rand(0.1, 0.17);
-      b.add(box(), twig, {
-        position: [Math.cos(a) * r, this.rand(0.02, 0.09), Math.sin(a) * r],
-        scale: [0.22, 0.012, 0.012], yaw: a + Math.PI / 2 + this.rand(-0.5, 0.5), tint: this.rand(0.7, 1.2),
-      });
+    const twig = material(0x6e5233, true, true), straw = material(0xb89a5a, true, true);
+    const up = new Vector3(0, 1, 0);
+    // Woven bowl: rings of short twigs, each tilted to follow the bowl wall.
+    const layers = 5;
+    for (let l = 0; l < layers; l++) {
+      const t = l / (layers - 1), y = 0.015 + t * 0.075, r = 0.075 + 0.075 * Math.sqrt(t);
+      const n = 9 + l * 3;
+      for (let i = 0; i < n; i++) {
+        const a = ((i + this.rand(-0.3, 0.3)) / n) * Math.PI * 2 + l;
+        const len = this.rand(0.09, 0.15), lean = this.rand(-0.5, 0.5);
+        const tan = new Vector3(-Math.sin(a), lean * 0.4, Math.cos(a)).normalize();
+        const q = new Quaternion().setFromUnitVectors(up, tan);
+        b.add(cyl(), i % 4 ? twig : straw, {
+          position: [Math.cos(a) * r, y + this.rand(-0.008, 0.008), Math.sin(a) * r],
+          scale: [0.006, len, 0.006], quaternion: q, tint: this.rand(0.65, 1.2),
+        });
+      }
     }
+    // A few stray twigs poking out of the rim.
+    for (let i = 0; i < 6; i++) {
+      const a = this.rand(0, Math.PI * 2);
+      const dir = new Vector3(Math.cos(a), this.rand(-0.1, 0.5), Math.sin(a)).normalize();
+      const q = new Quaternion().setFromUnitVectors(up, dir);
+      b.add(cyl(), twig, { position: [Math.cos(a) * 0.15, 0.08, Math.sin(a) * 0.15], scale: [0.005, this.rand(0.06, 0.1), 0.005], quaternion: q, tint: 0.8 });
+    }
+    // Soft lining and the cup floor.
+    b.add(ball(), material(0x5a4228, true), { position: [0, 0.035, 0], scale: [0.1, 0.03, 0.1] });
+    b.add(ball(), straw, { position: [0, 0.01, 0], scale: [0.11, 0.02, 0.11], tint: 0.7 });
     const egg = material(0x9fd0d8, true);
     for (let i = 0; i < eggs; i++) {
-      const a = (i / eggs) * Math.PI * 2;
-      b.add(ball(), egg, { position: [Math.cos(a) * 0.05, 0.08, Math.sin(a) * 0.05], scale: [0.035, 0.045, 0.035] });
+      const a = (i / eggs) * Math.PI * 2 + 0.4, rr = eggs > 1 ? 0.03 : 0;
+      const q = new Quaternion().setFromAxisAngle(new Vector3(Math.sin(a), 0, -Math.cos(a)), 1.2);
+      b.add(ball(), egg, {
+        position: [Math.cos(a) * rr, 0.07, Math.sin(a) * rr], scale: [0.022, 0.03, 0.022], quaternion: q,
+        tint: (x, y, z) => (Math.sin(x * 900) * Math.sin(y * 700 + z * 800) > 0.85 ? 0.45 : 1),
+      });
     }
     b.build(this);
     this.addShape('sphere', { radius: 0.18 }, [0, 0.08, 0], null, 'nest');
@@ -241,17 +267,26 @@ export class Flower extends WorldModel {
     const colour = color ?? [0xe8453c, 0xf2d13a, 0xd96bd0, 0xf5f5f0, 0x6b8cf0][this.seed % 5];
     const b = new MergeBuilder();
     const green = material(0x4c8f3a, true, true);
-    b.add(cyl(), green, { position: [0, height / 2, 0], scale: [0.012, height, 0.012] });
+    b.add(cyl(), green, { position: [0, height / 2, 0], scale: [0.01, height, 0.01], tint: (x, y) => 0.8 + 0.3 * (y / height) });
     for (let i = 0; i < 2; i++) {
-      b.add(ball(), green, { position: [Math.cos(i * Math.PI) * 0.06, height * 0.3, Math.sin(i * Math.PI) * 0.06], scale: [0.07, 0.012, 0.025], yaw: i * Math.PI });
+      const a = i * Math.PI + 0.6, y = height * (0.25 + i * 0.15);
+      const q = new Quaternion().setFromAxisAngle(up(), -a).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 0.45));
+      b.add(ball(), green, { position: [Math.cos(a) * 0.055, y + 0.02, Math.sin(a) * 0.055], scale: [0.065, 0.008, 0.022], quaternion: q, tint: 0.9 });
     }
+    b.add(ball(), green, { position: [0, height - 0.012, 0], scale: [0.025, 0.02, 0.025] }); // sepal cup
     const petal = material(colour, true);
-    const r = 0.07;
-    for (let i = 0; i < petals; i++) {
-      const a = (i / petals) * Math.PI * 2;
-      b.add(ball(), petal, { position: [Math.cos(a) * r, height, Math.sin(a) * r], scale: [0.06, 0.012, 0.025], yaw: -a });
+    // Two layers of petals, cupped upward, the inner ring smaller and tilted more.
+    for (const [layer, r, len, tilt, k] of [[0, 0.065, 0.06, 0.3, 1], [1, 0.04, 0.042, 0.7, 0.5]]) {
+      for (let i = 0; i < petals; i++) {
+        const a = ((i + k) / petals) * Math.PI * 2;
+        const q = new Quaternion().setFromAxisAngle(up(), -a).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), tilt));
+        b.add(ball(), petal, {
+          position: [Math.cos(a) * r, height + 0.005 + layer * 0.012 + Math.sin(tilt) * r * 0.5, Math.sin(a) * r], scale: [len, 0.008, 0.024], quaternion: q,
+          tint: (x, y, z) => 0.8 + 0.35 * Math.min(1, Math.hypot(x, z) / 0.12),
+        });
+      }
     }
-    b.add(ball(), material(0xe0a21b, true), { position: [0, height + 0.01, 0], scale: [0.04, 0.03, 0.04] });
+    b.add(ball(), material(0xe0a21b, true), { position: [0, height + 0.02, 0], scale: [0.026, 0.02, 0.026] });
     b.build(this);
     this.addShape('cylinder', { radius: 0.1, height }, [0, height / 2, 0], null, 'flower');
   }
