@@ -526,6 +526,25 @@ test('StylizedTree 5 and 6 branch out into clumped crowns; lowPoly keeps the sha
   [one, five, six, low].forEach((t) => t.dispose());
 });
 
+test('StylizedTree 7..10: L-system twigs add crowns and cards, same crown envelope', () => {
+  const base = new StylizedTree({ seed: 9, complexity: 6 });
+  let prev = base._subCrowns.length;
+  for (let c = 7; c <= 10; c++) {
+    const t = new StylizedTree({ seed: 9, complexity: c });
+    assert.strictEqual(t.complexity, c);
+    assert.ok(t.children.length <= 3, 'still 3 draw calls');
+    assert.deepStrictEqual(t.crown, base.crown);
+    assert.ok(t._subCrowns.length >= prev, `crowns grow (${prev} -> ${t._subCrowns.length})`);
+    assert.ok(Math.abs(t.cardCount - STYLIZED_CARDS[c]) <= t._subCrowns.length);
+    assert.ok(triangles(t) < 12000, `${c}: ${triangles(t)} triangles`);
+    assert.deepStrictEqual(new StylizedTree({ seed: 9, complexity: c }).getBounds(), t.getBounds(), 'deterministic');
+    prev = t._subCrowns.length;
+    t.dispose();
+  }
+  assert.strictEqual(new StylizedTree({ complexity: 99 }).complexity, 10);
+  base.dispose();
+});
+
 test('StylizedTree stature: short and stout .. tall', () => {
   const short = new StylizedTree({ seed: 4, stature: 0 }), tall = new StylizedTree({ seed: 4, stature: 1 });
   const [ts, tt] = [short, tall].map((t) => t._shapes.find((c) => c.tag === 'trunk'));
@@ -537,7 +556,7 @@ test('Forest complexity picks the 3D tree levels; sizeVariety spreads the varian
   const opts = { seed: 6, count: 100, area: 80, variants: 6, treeType: 'stylized' };
   const f = new Forest({ ...opts, complexity: 6 });
   assert.deepStrictEqual(f.levels, [{ complexity: 6 }, { complexity: 6, lowPoly: true }]);
-  assert.deepStrictEqual(new Forest({ ...opts, count: 10, complexity: 99 }).levels[0], { complexity: 6 }, 'clamped');
+  assert.deepStrictEqual(new Forest({ ...opts, count: 10, complexity: 99 }).levels[0], { complexity: 10 }, 'clamped');
   assert.deepStrictEqual(new Forest({ ...opts, count: 10 }).levels, STYLIZED_FOREST_LEVELS);
   assert.deepStrictEqual(new Forest({ seed: 6, count: 10, area: 40, variants: 1, complexity: 9 }).levels.map((l) => l.complexity), [9, 5]);
   const tops = (forest) => forest._treeVariants.map((v) => v.top);

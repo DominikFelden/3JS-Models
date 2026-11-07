@@ -96,7 +96,7 @@ function boxDistances(b, p) {
  *  - count: number of trees (default 1000), area: side of the square area, centred on the model (default 160; `size` stays the uniform scale of every model)
  *  - treeType: 'leaf' (`LeafTree`, default) or 'stylized' (`StylizedTree`: blob core + leaf cards, far cheaper)
  *  - variants: distinct trees built (default 6), seed (as for every model: same seed, same forest)
- *  - complexity: complexity of the nearest 3D trees (stylized 0..6, leaf 0..MAX_TREE_COMPLEXITY); the farther level follows
+ *  - complexity: complexity of the nearest 3D trees (stylized 0..10, leaf 0..MAX_TREE_COMPLEXITY); the farther level follows
  *    from it (stylized: the same tree `lowPoly`, leaf: complexity - 4). Default: the type's default levels
  *  - levels: [{complexity, leafSize, lowPoly}] detail levels, best first (overrides `complexity`; default `FOREST_LEVELS`,
  *    or `STYLIZED_FOREST_LEVELS` for stylized trees)
