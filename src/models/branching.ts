@@ -47,14 +47,59 @@ function branchGeometry(thin = false) {
   });
 }
 
-/** Random unit-ish perturbation of `dir`, `spread` ~ how far it may bend. */
-function bend(dir, spread, rnd) {
-  const v = new Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(2 * spread);
-  return dir.clone().add(v).normalize();
+/**
+ * Parametric, stochastic L-system (Lindenmayer system). A symbol is an object
+ * { c, ...params }; `rules` maps a symbol letter to a function returning its
+ * replacement symbols (or undefined to keep it). All symbols are rewritten in
+ * parallel, `iterations` times.
+ *
+ * Turtle alphabet understood by `runTurtle`:
+ *   F {len, rad}  draw a branch forwards      [ / ]  push / pop the turtle state
+ *   T {t}         move back to fraction t of the last branch (fork point)
+ *   B {fn}        turn: dir = fn(dir)         E      mark a branch end (tip) / J joint
+ */
+export function lsystem(axiom, rules, iterations) {
+  // Context-free rules, so rewriting each symbol to its fixed point depth-first gives the
+  // same string as parallel rewriting, and draws random numbers in a stable, tree-walk order.
+  const expand = (sym, left) => {
+    const r = left > 0 ? rules[sym.c]?.(sym) : undefined;
+    return r ? r.flatMap((x) => expand(x, left - 1)) : [sym];
+  };
+  return axiom.flatMap((sym) => expand(sym, iterations));
 }
 
 /**
- * Recursively grows branches and sub-branches.
+ * Interprets L-system symbols with a 3D turtle. `onBranch({pos, dir, len, rad, depth, end})`
+ * is called for every F (depth = bracket nesting); `onMark(sym, pos, depth)` for E and J.
+ */
+export function runTurtle(symbols, pos, dir, onBranch, onMark = (..._a: any[]) => {}) {
+  const stack = [];
+  let p = pos.clone(), d = dir.clone().normalize(), depth = 0;
+  let last = { start: p.clone(), len: 0, dir: d.clone() };
+  for (const s of symbols) {
+    switch (s.c) {
+      case '[': stack.push({ p: p.clone(), d: d.clone(), last: { ...last } }); depth++; break;
+      case ']': { const t = stack.pop(); p = t.p; d = t.d; last = t.last; depth--; break; }
+      case 'T': p = last.start.clone().addScaledVector(last.dir, last.len * s.t); break;
+      case 'B': d = s.fn(d).normalize(); break;
+      case 'F': {
+        const end = p.clone().addScaledVector(d, s.len);
+        onBranch({ pos: p.clone(), dir: d.clone(), len: s.len, rad: s.rad, depth, end });
+        last = { start: p.clone(), len: s.len, dir: d.clone() };
+        p = end;
+        break;
+      }
+      case 'E': case 'J': onMark(s, p.clone(), depth); break;
+    }
+  }
+}
+
+/**
+ * Recursively grows branches and sub-branches with an L-system.
+ *
+ * Rule: A(len, rad, lv) -> F(len, rad) J C C ... (2 children, sometimes 3), C -> [ T B A ],
+ * and A at the last generation -> F E. Children fork from the outer 30% of
+ * their parent and bend by `opts.spread`.
  *
  * Every branch is added as visual (via `builder`); the first
  * COLLIDER_GENERATIONS generations also get a cylinder collider (via
@@ -62,7 +107,7 @@ function bend(dir, spread, rnd) {
  *
  * Level semantics: `levels` = number of branching generations. levels = 1 is a
  * single set of branches, levels = 3 means branches with sub-branches with
- * sub-sub-branches. Each branch spawns 2 children (sometimes 3).
+ * sub-sub-branches.
  *
  * @param {WorldModel} model   receives the colliders
  * @param {MergeBuilder} builder  receives the visual geometry
@@ -77,39 +122,37 @@ function bend(dir, spread, rnd) {
  * @returns {Vector3[]} tips of the outermost branches
  */
 export function growBranch(model, builder, mat, rnd, root, levels, opts, tips = []) {
-  const { pos, dir, length, radius, depth = 0 } = root;
-  const end = pos.clone().addScaledVector(dir, length);
-
-  // Visual: unit branch rotated from +Y onto `dir`, scaled to size.
-  const quat = new Quaternion().setFromUnitVectors(Y, dir);
-  // Twigs this thin are sub-pixel at normal view distances, so 3 sides look identical.
-  builder.add(branchGeometry(radius < 0.03), mat, { position: pos.toArray(), quaternion: quat, scale: [radius, length, radius] });
-
-  // Collider: cylinder centred half way along the branch (thick generations only).
-  if (depth < COLLIDER_GENERATIONS) {
-    const centre = pos.clone().addScaledVector(dir, length / 2);
-    model.addShape('cylinder', { radius: radius * 0.85, height: length }, centre.toArray(), quat.clone(), 'branch');
-  }
-
-  if (levels <= 1) {
-    tips.push(end);
-    return tips;
-  }
-  opts.joints?.push(end);
-  const children = rnd() < 0.15 ? 3 : 2;
-  for (let i = 0; i < children; i++) {
-    // Fork somewhere on the outer 30% of the parent so branches look staggered.
-    const start = pos.clone().addScaledVector(dir, length * (0.7 + rnd() * 0.3));
-    const childDir = bend(dir, opts.spread, rnd);
-    childDir.y += opts.upward; // branches reach a bit for the light
-    childDir.normalize();
-    growBranch(model, builder, mat, rnd, {
-      pos: start,
-      dir: childDir,
-      length: length * (opts.shrink - 0.08 + rnd() * 0.16),
-      radius: Math.max(0.015, radius * opts.thin),
-      depth: depth + 1,
-    }, levels - 1, opts, tips);
-  }
+  const { pos, dir, length, radius } = root;
+  const rules = {
+    A: ({ len, rad, lv }) => {
+      const out: any[] = [{ c: 'F', len, rad }];
+      if (lv <= 1) return [...out, { c: 'E' }];
+      out.push({ c: 'J' });
+      const children = rnd() < 0.15 ? 3 : 2;
+      for (let i = 0; i < children; i++) out.push({ c: 'C', len, rad, lv: lv - 1 });
+      return out;
+    },
+    // A child branch draws its random numbers when expanded, so siblings interleave with their subtrees.
+    C: ({ len, rad, lv }) => {
+      const t = 0.7 + rnd() * 0.3;
+      const v = new Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(2 * opts.spread);
+      return [
+        { c: '[' }, { c: 'T', t },
+        { c: 'B', fn: (d) => { const n = d.clone().add(v).normalize(); n.y += opts.upward; return n; } },
+        { c: 'A', len: len * (opts.shrink - 0.08 + rnd() * 0.16), rad: Math.max(0.015, rad * opts.thin), lv },
+        { c: ']' },
+      ];
+    },
+  };
+  const symbols = lsystem([{ c: 'A', len: length, rad: radius, lv: levels }], rules, levels * 2);
+  runTurtle(symbols, pos, dir, ({ pos: p, dir: d, len, rad, depth }) => {
+    const quat = new Quaternion().setFromUnitVectors(Y, d);
+    // Twigs this thin are sub-pixel at normal view distances, so 3 sides look identical.
+    builder.add(branchGeometry(rad < 0.03), mat, { position: p.toArray(), quaternion: quat, scale: [rad, len, rad] });
+    // Collider: cylinder centred half way along the branch (thick generations only).
+    if (depth < COLLIDER_GENERATIONS) {
+      model.addShape('cylinder', { radius: rad * 0.85, height: len }, p.clone().addScaledVector(d, len / 2).toArray(), quat.clone(), 'branch');
+    }
+  }, (s, p) => { (s.c === 'E' ? tips : opts.joints)?.push(p); });
   return tips;
 }
