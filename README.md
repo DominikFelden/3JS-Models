@@ -152,6 +152,32 @@ The pool is also available for your own meshes (all exported from `src/index.ts`
 
 To change the look, edit the palettes (`RECIPES`) and how a kind is laid on geometry (`MAPPING`) in `src/textures/recipes.js`; the drawing code of each kind is in `src/textures/kinds.js`.
 
+## Toon shading
+Optional global cel shading (banded sun light, crisp shadow edges, cool shade tint, rim light) plus ink outlines. Nothing changes until you call it.
+```js
+import { setToonShading, ToonOutlines } from './libs/3JS-Models/src/index.ts';
+setToonShading({ steps: 2, rimStrength: 0.35 });   // before the first render
+const outlines = new ToonOutlines(renderer);         // optional post pass
+// on resize:  outlines.setSize(width, height);
+// each frame: outlines.render(scene, camera);       // instead of renderer.render
+```
+**`setToonShading(options)`** patches three.js' shader chunks once, so every `MeshStandardMaterial` / `MeshPhysicalMaterial` (all models, the texture pool, your own meshes) is toon shaded; Lambert/Phong are untouched. Call it **before the first render**: programs compiled earlier keep the plain lighting. All values are live uniforms, so later calls (e.g. a settings slider) cost no recompile. It returns the current settings; `toonSettings()` reads them, `resetToonShading()` restores the defaults.
+
+| Option | Default | |
+|---|---|---|
+| `enabled` | `true` | `false` falls back to the normal PBR lighting |
+| `steps` | 2 | light bands (1-4) |
+| `threshold` | 0.08 | N·L where light starts |
+| `softness` | 0.025 | width of the band edge (0 = hard) |
+| `gradient` | 0.5 | how much of the smooth N·L falloff stays inside the bands (0 = flat bands) |
+| `shadowSoftness` | 0.12 | crispness of shadow-map edges |
+| `rimStrength`, `rimWidth`, `rimColor` | 0.35, 0.28, `0xfff4e0` | lit rim along silhouettes |
+| `shadeTint` | `(0.78, 0.82, 1.05)` | multiplier for ambient light in the shade (cool shadows) |
+
+Custom `ShaderMaterial`s that include `lights_physical_pars_fragment` must merge `TOON_UNIFORMS` into their uniforms.
+
+**`ToonOutlines(renderer, options)`** renders the scene into an MSAA target and draws it with dark lines at depth jumps (silhouettes) and creases: one full-screen pass, no extra draw calls or geometry. Options (all but `samples` can be changed later with `outlines.set()`): `thickness` (1.25 px, × pixel ratio), `darkness` (0.3, line = darkened surface colour), `ink` / `inkMix` (`0x2a1e2e`, 0.35), `threshold` (0.035, relative depth jump), `creases` (0.6, 0 = silhouettes only), `fade` (`[40, 160]`, distance range where lines fade out), `opacity` (0.9), `saturation` (1.12), `samples` (4, MSAA; lower on weak mobile GPUs). Set `outlines.enabled = false` to render directly; `dispose()` frees the target.
+
 ## Placing models: position, size, rotation
 All models extend `WorldModel` (a `THREE.Group`) and take the same options:
 ```js
@@ -201,7 +227,7 @@ Foliage shapes are bounding shapes of the crown; whether to collide with them is
 npm install
 npm run dev
 ```
-Open the printed URL and pick a model in the menu. While the shared textures are painted at start-up a progress overlay is shown. For models that support it a **Complexity slider** appears (trees: up to 20) and models with parameters or textures get a **Parameters…** modal: trunk height/thickness, leaf size, leaf type (Leaf-Tree) and trunk/leaf colour pickers (*auto* keeps the colours of the picked texture), and a **Textures** section that lists the variants of every kind the model uses; click a thumbnail to pin it to this model, click it again to return to the random pick. Tick *Show below* to pin a control under the 3D view. Re-roll randomizes all of them (and unpins the textures). Sliders keep the current seed; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. The **Forest** and **Forest (fly-over)** (30 000 trees on 1 km², seen from high above) entries show a live overlay (fps, 3D trees, trees per level, impostors, canopy, detail, draw calls, triangles), a *Complexity* slider (0-6, complexity of the nearest stylized trees; Leaf-Tree forests keep their levels) and have *Tree type* (stylized / Leaf-Tree), *Trees*, *Area*, *Size variety*, *Distance LOD*, *Impostors*, *Canopy*, *Shadows* and *Auto detail* (`adaptDetail`) controls, to check performance in a (mobile) browser. On touch devices the viewer renders at most 1.5 pixels per CSS pixel. New models are registered in `src/registry.js`.
+Open the printed URL and pick a model in the menu. While the shared textures are painted at start-up a progress overlay is shown. For models that support it a **Complexity slider** appears (trees: up to 20) and models with parameters or textures get a **Parameters…** modal: trunk height/thickness, leaf size, leaf type (Leaf-Tree) and trunk/leaf colour pickers (*auto* keeps the colours of the picked texture), and a **Textures** section that lists the variants of every kind the model uses; click a thumbnail to pin it to this model, click it again to return to the random pick. Tick *Show below* to pin a control under the 3D view. Re-roll randomizes all of them (and unpins the textures). Sliders keep the current seed; moving it rebuilds the model live (with a new random seed each time). **Re-roll** builds another random variation at the same complexity. The seed of the shown model is displayed next to the button. The **Forest** and **Forest (fly-over)** (30 000 trees on 1 km², seen from high above) entries show a live overlay (fps, 3D trees, trees per level, impostors, canopy, detail, draw calls, triangles), a *Complexity* slider (0-6, complexity of the nearest stylized trees; Leaf-Tree forests keep their levels) and have *Tree type* (stylized / Leaf-Tree), *Trees*, *Area*, *Size variety*, *Distance LOD*, *Impostors*, *Canopy*, *Shadows* and *Auto detail* (`adaptDetail`) controls, to check performance in a (mobile) browser. On touch devices the viewer renders at most 1.5 pixels per CSS pixel. The viewer uses [toon shading](#toon-shading): the *Toon shading* and *Outlines* checkboxes compare it with the plain look (`?toon=0` / `?outlines=0` in the URL start without), and `window.setToonShading({...})` / `window.outlines.set({...})` tweak it live from the console. New models are registered in `src/registry.js`.
 
 ## Tests
 `npm test`

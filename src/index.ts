@@ -23,3 +23,4 @@ export { Well, Windmill, Watchtower, Bridge, FENCE_STYLES, Fence, Signpost, Mark
 export { WizardTower, Temple, Obelisk, Portal, Ruins, Gravestone, Shrine, Pyramid } from './models/Structures.ts';
 export { Campfire, Torch, Lantern, Chest, Barrel, Crate, Banner, Cart, Anvil, Table, Chair, Bed } from './models/Props.ts';
 export { Mushroom, GiantMushroom, Cactus, PalmTree, Stump, Log, Reeds, Pumpkin, Rowboat, Ship } from './models/Flora.ts';
+export { setToonShading, resetToonShading, toonSettings, TOON_UNIFORMS, ToonOutlines } from './toon/index.ts';
