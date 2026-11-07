@@ -517,7 +517,11 @@ test('StylizedTree 5 and 6 branch out into clumped crowns; lowPoly keeps the sha
     assert.deepStrictEqual(t.crown, one.crown, 'same crown envelope as the single-crown tree');
   }
   assert.ok(five._subCrowns.length >= 3 && six._subCrowns.length === 2 * five._subCrowns.length, 'limbs, then two twigs per limb');
-  assert.ok(Math.abs(six.cardCount - STYLIZED_CARDS[6]) <= six._subCrowns.length);
+  for (const t of [five, six, low]) {
+    assert.ok(t.cardCount >= 8 * t._clumps.length, 'every clump gets a full shell of cards');
+    assert.ok(t._subCrowns.every((cr) => cr.n === undefined && cr.size > 0), 'branch clumps get cards sized to cover their core');
+  }
+  assert.ok(five.cardCount > STYLIZED_CARDS[4] && low.cardCount < six.cardCount, `${five.cardCount} / ${six.cardCount} / ${low.cardCount}`);
   assert.ok(triangles(one) < triangles(five) && triangles(five) < triangles(six) && triangles(six) < 2000, `${triangles(five)} / ${triangles(six)}`);
   assert.ok(triangles(low) * 2 < triangles(six), 'lowPoly is much cheaper');
   const centres = (t) => { const a = cardMesh(t).geometry.attributes.cardCenter; const s = new Set(); for (let i = 0; i < a.count; i += 4) s.add(`${a.getX(i)},${a.getY(i)},${a.getZ(i)}`); return s; };
@@ -528,17 +532,18 @@ test('StylizedTree 5 and 6 branch out into clumped crowns; lowPoly keeps the sha
 
 test('StylizedTree 7..10: L-system twigs add crowns and cards, same crown envelope', () => {
   const base = new StylizedTree({ seed: 9, complexity: 6 });
-  let prev = base._subCrowns.length;
+  let prev = base._subCrowns.length, prevCards = base.cardCount;
   for (let c = 7; c <= 10; c++) {
     const t = new StylizedTree({ seed: 9, complexity: c });
     assert.strictEqual(t.complexity, c);
     assert.ok(t.children.length <= 3, 'still 3 draw calls');
     assert.deepStrictEqual(t.crown, base.crown);
     assert.ok(t._subCrowns.length >= prev, `crowns grow (${prev} -> ${t._subCrowns.length})`);
-    assert.ok(Math.abs(t.cardCount - STYLIZED_CARDS[c]) <= t._subCrowns.length);
+    assert.ok(t.cardCount >= 8 * t._clumps.length && t.cardCount >= prevCards, `${c}: leaves at every twig tip (${t.cardCount} cards)`);
     assert.ok(triangles(t) < 12000, `${c}: ${triangles(t)} triangles`);
     assert.deepStrictEqual(new StylizedTree({ seed: 9, complexity: c }).getBounds(), t.getBounds(), 'deterministic');
     prev = t._subCrowns.length;
+    prevCards = t.cardCount;
     t.dispose();
   }
   assert.strictEqual(new StylizedTree({ complexity: 99 }).complexity, 10);
