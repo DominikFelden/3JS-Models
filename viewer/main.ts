@@ -6,6 +6,12 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { models } from '../src/registry.ts';
 import { preloadTextures, getTexture, TEXTURE_VARIANTS } from '../src/textures/index.ts';
+import { setToonShading, ToonOutlines } from '../src/toon/index.ts';
+
+// Toon shading patches three.js shaders, so it is switched on before anything is drawn.
+// `?toon=0` starts with the plain look; the checkboxes switch both at any time.
+const params = new URLSearchParams(location.search);
+setToonShading({ enabled: params.get('toon') !== '0' });
 
 const scene = new Scene();
 scene.background = new Color(0xbfd9ee);
@@ -21,6 +27,9 @@ renderer.toneMapping = ACESFilmicToneMapping;
 renderer.outputColorSpace = SRGBColorSpace;
 const view = document.getElementById('view') as any;
 view.appendChild(renderer.domElement);
+const outlines = new ToonOutlines(renderer);
+outlines.enabled = params.get('outlines') !== '0' && params.get('toon') !== '0';
+Object.assign(window as any, { outlines, setToonShading }); // tweak from the browser console
 
 function resize() {
   const w = view.clientWidth, h = view.clientHeight;
@@ -28,6 +37,7 @@ function resize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
+  outlines.setSize(w, h);
 }
 new ResizeObserver(resize).observe(view);
 resize();
@@ -106,6 +116,7 @@ function show(reframe) {
   const size = box.getSize(new Vector3()).length();
   const center = box.getCenter(new Vector3());
   controls.target.copy(center);
+  outlines.set({ fade: [Math.max(40, size * 2.5), Math.max(160, size * 8)] }); // big models keep their lines
   camera.position.copy(center).add(new Vector3(1, 0.6, 1).normalize().multiplyScalar(size * 1.4));
   controls.update();
 }
@@ -288,6 +299,12 @@ rerollButton.addEventListener('click', randomize);
 configureSlider();
 renderParams();
 
+const toonBox = document.getElementById('toon') as any, outlineBox = document.getElementById('outlines') as any;
+toonBox.checked = params.get('toon') !== '0';
+outlineBox.checked = outlines.enabled;
+toonBox.addEventListener('change', () => setToonShading({ enabled: toonBox.checked }));
+outlineBox.addEventListener('change', () => { outlines.enabled = outlineBox.checked; });
+
 const statsBox = document.getElementById('stats') as any;
 /** FPS and draw load, shown for models that report `stats` (Forest) to judge performance on a phone. */
 function showStats(fps) {
@@ -311,7 +328,7 @@ async function start() {
   renderer.setAnimationLoop(() => {
     controls.update();
     current?.update?.(camera); // models with levels of detail (Forest) choose what to draw
-    renderer.render(scene, camera);
+    outlines.render(scene, camera);
     frames++;
     const now = performance.now();
     if (now - since >= 500) {
