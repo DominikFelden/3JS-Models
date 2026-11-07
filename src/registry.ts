@@ -5,7 +5,7 @@ import {
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
   Wall, Door, Window, GlassDoor, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
   LEAF_TYPES,
-  Mountain, Hill, Cliff, CaveEntrance, Pond, Waterfall, Crystal, IceSpire, Well, Windmill, Watchtower, Bridge, Fence, Signpost, MarketStall, Tent, Mine, WizardTower, Temple, Obelisk, Portal, Ruins, Gravestone, Shrine, Pyramid, Campfire, Torch, Lantern, Chest, Barrel, Crate, Banner, Cart, Anvil, Table, Chair, Bed, Villager, Knight, Wizard, Horse, Wolf, Dragon, Slime, Skeleton, Mushroom, GiantMushroom, Cactus, PalmTree, Stump, Log, Reeds, Pumpkin, Rowboat, Ship,
+  Mountain, Hill, Cliff, CaveEntrance, Pond, Waterfall, Crystal, IceSpire, Well, Windmill, Watchtower, Bridge, Fence, Signpost, MarketStall, Tent, Mine, WizardTower, Temple, Obelisk, Portal, Ruins, Gravestone, Shrine, Pyramid, Campfire, Torch, Lantern, Chest, Barrel, Crate, Banner, Cart, Anvil, Table, Chair, Bed, Mushroom, GiantMushroom, Cactus, PalmTree, Stump, Log, Reeds, Pumpkin, Rowboat, Ship,
 } from './index.ts';
 
 /** Tree controls shown in the viewer's parameter modal (`key` = model option). Colours default to `null`: the picked texture's own colours. */
@@ -117,7 +117,6 @@ const unsorted = [
   { name: 'Market Stall', create: (o) => new MarketStall(base(o)) },
   { name: 'Tent', create: (o) => new Tent(base(o)) },
   { name: 'Mine', create: (o) => new Mine(base(o)) },
-  { name: 'Wizard Tower', create: (o) => new WizardTower(base(o)) },
   { name: 'Temple', create: (o) => new Temple(base(o)) },
   { name: 'Obelisk', create: (o) => new Obelisk(base(o)) },
   { name: 'Portal', create: (o) => new Portal(base(o)) },
@@ -137,14 +136,6 @@ const unsorted = [
   { name: 'Table', create: (o) => new Table(base(o)) },
   { name: 'Chair', create: (o) => new Chair(base(o)) },
   { name: 'Bed', create: (o) => new Bed(base(o)) },
-  { name: 'Villager', create: (o) => new Villager(base(o)) },
-  { name: 'Knight', create: (o) => new Knight(base(o)) },
-  { name: 'Wizard', create: (o) => new Wizard(base(o)) },
-  { name: 'Horse', create: (o) => new Horse(base(o)) },
-  { name: 'Wolf', create: (o) => new Wolf(base(o)) },
-  { name: 'Dragon', create: (o) => new Dragon(base(o)) },
-  { name: 'Slime', create: (o) => new Slime(base(o)) },
-  { name: 'Skeleton', create: (o) => new Skeleton(base(o)) },
   { name: 'Mushroom', create: (o) => new Mushroom(base(o)) },
   { name: 'Giant Mushroom', create: (o) => new GiantMushroom(base(o)) },
   { name: 'Cactus', create: (o) => new Cactus(base(o)) },
