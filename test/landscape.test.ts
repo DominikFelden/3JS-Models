@@ -39,7 +39,7 @@ test('CaveEntrance leaves the opening free', () => {
 
 test('Crystal and IceSpire counts, Pond/Waterfall water colliders', () => {
   assert.strictEqual(new IceSpire({ spikes: 3 }).getColliders().length, 3);
-  assert.ok(new Crystal({ count: 7, color: 0xff0000 }).children.length === 7);
+  assert.strictEqual(new Crystal({ count: 7, color: 0xff0000 }).crystals.length, 7);
   assert.ok(new Pond().getColliderTags().includes('water'));
   assert.ok(new Waterfall().getColliderTags().includes('water'));
   assert.strictEqual(new Hill().getColliders()[0].type, 'convex');

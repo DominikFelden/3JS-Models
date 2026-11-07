@@ -481,4 +481,89 @@ const canopy = wrap(/* glsl */ `
     col *= 1.0 - 0.45 * shadow;
 `);
 
-export const BODIES = { bark, foliage, needles, rock, brick, stone, mossy, cobble, plaster, planks, shingle, glass, lamp, leaf, canopy };
+// u_param: x blade columns across the tile, y flower density (0..1)
+// Grass: soft green wash with lighter meadow patches, short pen strokes for
+// tufts of blades (dark at the root, light tips) and a few dotted flowers.
+const grass = wrap(/* glsl */ `
+    float N = u_param.x;
+    vec2 w = HD_warp(uv, 4.0, 0.04);
+    float wash = HD_fbm(uv, vec2(3.0));
+    vec4 pv = HD_voro(w * 4.0, vec2(4.0), 1.0);
+    vec3 col = HD_ramp(clamp(0.2 + 0.55 * wash + 0.3 * (pv.z - 0.5), 0.0, 1.0));
+
+    float rows = N;
+    float ry = w.y * rows;
+    float rid = mod(floor(ry), rows);
+    float fy = fract(ry);
+    float bx = w.x * N * 3.0 + HD_h12(vec2(rid, 4.0) + u_seed) * 3.0;
+    float bid = mod(floor(bx), N * 3.0);
+    float hs = HD_h12(vec2(bid, rid) + u_seed);
+    float lean = (HD_h12(vec2(bid, rid) + u_seed + 7.0) - 0.5) * 0.8;
+    float fx = fract(bx) - 0.5 + (1.0 - fy) * lean;
+    float len = 0.45 + 0.45 * hs;
+    float body = (1.0 - smoothstep(len * 0.75, len, 1.0 - fy)) * step(0.3, hs);
+    float blade = HD_line(fx, 0.05 * fy + 0.015, 0.04) * body;
+    float tuft = smoothstep(0.3, 0.6, HD_noise(uv + 0.4, vec2(6.0)));
+    col = mix(col, u_ink, blade * fy * 0.55 * (0.4 + 0.6 * tuft));
+    col = mix(col, HD_ramp(1.0), blade * (1.0 - fy) * 0.35 * tuft);
+
+    float h = HD_hatch(w, 5.0, 19.0, 0.14, 1.2) * (1.0 - smoothstep(0.3, 0.5, wash));
+    col = mix(col, u_ink, h * 0.22);
+
+    vec4 fv = HD_voro(w * 10.0, vec2(10.0), 0.9);
+    float fl = step(1.0 - u_param.y, fv.z) * (1.0 - smoothstep(0.1, 0.14, fv.x));
+    vec3 petal = mix(u_extra, vec3(1.0), 0.25 * step(0.5, fract(fv.z * 7.0)));
+    col = mix(col, petal, fl);
+    col = mix(col, vec3(0.95, 0.8, 0.3), fl * (1.0 - smoothstep(0.03, 0.05, fv.x)));
+`);
+
+// u_param: x weave threads across the tile, y stripes (0 = plain), z stripe half width
+// Cloth: woven canvas with soft fold shading, hatched creases and optional stripes in u_extra.
+const cloth = wrap(/* glsl */ `
+    float N = u_param.x;
+    vec2 w = HD_warp(uv, 4.0, 0.03);
+    float wash = HD_fbm(w, vec2(3.0));
+    vec3 col = HD_ramp(clamp(0.3 + 0.55 * wash, 0.0, 1.0));
+    float fold = HD_noise(w, vec2(5.0, 1.0));
+    col *= 0.86 + 0.22 * smoothstep(0.2, 0.8, fold);
+
+    vec2 t = uv * N;
+    float wx = abs(fract(t.x) - 0.5);
+    float wy = abs(fract(t.y) - 0.5);
+    float chk = mod(floor(t.x) + floor(t.y), 2.0);
+    float weave = mix(wx, wy, chk);
+    col *= 0.93 + 0.1 * (1.0 - smoothstep(0.1, 0.5, weave));
+
+    float S = u_param.y;
+    float on = step(0.5, S);
+    float sd = abs(fract(w.x * max(S, 1.0)) - 0.5);
+    float stripe = on * (1.0 - smoothstep(u_param.z, u_param.z + 0.02, sd));
+    col = mix(col, u_extra * (0.85 + 0.25 * wash), stripe);
+    col = mix(col, u_ink, HD_line(sd - u_param.z, 0.006, 0.012) * on * 0.45);
+
+    float crease = HD_hatch(w, 3.0, 14.0, 0.14, 1.2) * (1.0 - smoothstep(0.25, 0.45, fold));
+    col = mix(col, u_ink, crease * 0.3);
+    float seam = HD_line(fract(w.y * 2.0) - 0.5, 0.004, 0.006) * step(0.5, HD_noise(uv + 0.6, vec2(4.0, 1.0)));
+    col = mix(col, u_ink, seam * 0.35);
+`);
+
+// Water: blue wash, wavy ripple contours in u_extra, short white glints and a
+// little hatching in the deeper (darker) parts.
+const water = wrap(/* glsl */ `
+    vec2 w = HD_warp(uv, 3.0, 0.08);
+    float n = HD_fbm(w, vec2(3.0));
+    vec3 col = HD_ramp(n);
+    float r = HD_fbm(w + 0.37, vec2(4.0)) * 7.0;
+    float ripple = HD_line(fract(r) - 0.5, 0.025, 0.035) * smoothstep(0.3, 0.6, HD_noise(uv + 0.2, vec2(5.0)));
+    col = mix(col, u_extra, ripple * 0.6);
+    float ry = w.y * 24.0;
+    float rid = mod(floor(ry), 24.0);
+    float gx = abs(fract(w.x * 3.0 - HD_h12(vec2(rid, 2.0) + u_seed)) - 0.5);
+    float glint = (1.0 - smoothstep(0.05, 0.09, gx)) * HD_line(fract(ry) - 0.5, 0.07, 0.08)
+      * step(0.55, HD_h12(vec2(rid, 7.0) + u_seed));
+    col = mix(col, vec3(1.0), glint * 0.85);
+    float hatch = HD_hatch(w, 2.0, 17.0, 0.12, 1.0) * (1.0 - smoothstep(0.3, 0.5, n));
+    col = mix(col, u_ink, hatch * 0.3);
+`);
+
+export const BODIES = { bark, foliage, needles, rock, brick, stone, mossy, cobble, plaster, planks, shingle, glass, lamp, leaf, canopy, grass, cloth, water };

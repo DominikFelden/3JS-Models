@@ -205,6 +205,43 @@ export const RECIPES = {
       v(5, [0x1f4a4a, 0x2f7068, 0x4a9a82, 0x82c4a4], 0x10302e, 0, [6, 0, 0, 0]),
     ],
   },
+  grass: {
+    size: 256,
+    wash: { scale: 3, tint: 0.85, strength: 0.4 },
+    grain: 0.93,
+    weights: [1, 1, 1, 0.6, 0.4],
+    variants: [
+      v(1, [0x3f7a2e, 0x5c9a3a, 0x7fb84c, 0xb0d970], 0x22401a, 0xf2f0e8, [10, 0.05, 0, 0]),
+      v(2, [0x3a6b33, 0x4f8a42, 0x6caa55, 0x98c878], 0x1c3519, 0xe8c040, [10, 0.04, 0, 0]),
+      v(3, [0x4f7a2a, 0x6f9a35, 0x93b848, 0xc2d870], 0x2a3d14, 0xd8708a, [11, 0.06, 0, 0]),
+      v(4, [0x2e5e3a, 0x3f7a4a, 0x58995c, 0x86bb80], 0x163020, 0x9ab8f0, [10, 0.04, 0, 0]),
+      v(5, [0x7a7a35, 0x9a9445, 0xb8ae5a, 0xd8cc80], 0x3d3a18, 0xf0e8d0, [11, 0.03, 0, 0]), // dry
+    ],
+  },
+  cloth: {
+    size: 256,
+    wash: { scale: 3, tint: 0.88, strength: 0.4 },
+    grain: 0.92,
+    variants: [
+      v(1, [0xa89a7c, 0xc4b796, 0xdcd0b0, 0xece4cc], 0x4a4030, 0, [64, 0, 0, 0]), // canvas
+      v(2, [0x7a2a24, 0x9e3a30, 0xbc5040, 0xd8705a], 0x3a1210, 0xe8dcc0, [64, 0, 0, 0]),
+      v(3, [0x2a3f6a, 0x3a5588, 0x506fa6, 0x7290c0], 0x141e36, 0xe0c860, [64, 0, 0, 0]),
+      v(4, [0xa89a7c, 0xc4b796, 0xdcd0b0, 0xece4cc], 0x4a4030, 0x9e3a30, [64, 3, 0.12, 0]), // striped canvas
+      v(5, [0x3e5a34, 0x557a46, 0x6e965a, 0x92b47a], 0x1c2c16, 0xd8c890, [64, 0, 0, 0]),
+    ],
+  },
+  water: {
+    size: 256,
+    wash: { scale: 3, tint: 0.9, strength: 0.35 },
+    grain: 0.96,
+    variants: [
+      v(1, [0x1f5a7a, 0x2f7ea0, 0x4aa2c0, 0x7cc8dc], 0x103448, 0xb8e8f0, []),
+      v(2, [0x1a5a5a, 0x287c78, 0x3fa098, 0x72c4b8], 0x0e3434, 0xb0eadc, []), // teal
+      v(3, [0x24507a, 0x33689a, 0x4a86b8, 0x78acd6], 0x142c48, 0xc4dcf4, []),
+      v(4, [0x2a5a48, 0x3a7860, 0x52967a, 0x80b89c], 0x163428, 0xc0e4c8, []), // pond green
+      v(5, [0x1c6a8a, 0x2a8cae, 0x46b0cc, 0x86d6e6], 0x0e3c52, 0xd0f4fa, []), // tropical
+    ],
+  },
 };
 
 export const KINDS = Object.keys(RECIPES);
@@ -236,6 +273,9 @@ export const MAPPING = {
   lamp: { uv: 'face', tile: 1.2, shift: [1, 1] },
   leaf: { uv: 'native', tile: 1, shift: [0, 0], double: true },
   canopy: { uv: 'world', tile: 30, shift: [1, 1] },
+  grass: { uv: 'world', tile: 2.2, shift: [1, 1] },
+  cloth: { uv: 'face', tile: 1.6, shift: [1, 0] },
+  water: { uv: 'world', tile: 3, shift: [1, 1] },
 };
 
 const channel = (hex, shift) => ((hex >> shift) & 255) / 255;

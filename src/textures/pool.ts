@@ -87,12 +87,13 @@ export function textureMean(kind, variant) {
  *           variant's own colourway.
  *  - vertexColors: set for geometry built by `MergeBuilder` (per-part tint).
  *  - glow: emissive intensity; the texture lights itself (window glass).
+ *  - opacity: below 1 makes the material transparent (water).
  * Without textures (Node) this is a plain material in the variant's colour.
  */
-export function pooledMaterial(kind, variant, { color = null, flatShading = true, vertexColors = false, roughness = 1, metalness = 0, glow = 0 }: any = {}) {
+export function pooledMaterial(kind, variant, { color = null, flatShading = true, vertexColors = false, roughness = 1, metalness = 0, glow = 0, opacity = 1 }: any = {}) {
   check(kind, variant);
   const target = color === null ? null : new Color(color);
-  const key = `${kind}:${variant}:${target ? target.getHexString() : '-'}:${flatShading}:${vertexColors}:${roughness}:${metalness}:${glow}`;
+  const key = `${kind}:${variant}:${target ? target.getHexString() : '-'}:${flatShading}:${vertexColors}:${roughness}:${metalness}:${glow}:${opacity}`;
   if (!materials.has(key)) {
     const slot = slots(kind)?.[variant];
     let tint;
@@ -105,6 +106,11 @@ export function pooledMaterial(kind, variant, { color = null, flatShading = true
     const mat = new MeshStandardMaterial({
       color: tint, map: slot?.texture ?? null, flatShading, vertexColors, roughness, metalness, side: MAPPING[kind].double ? DoubleSide : FrontSide,
     });
+    if (opacity < 1) {
+      mat.transparent = true;
+      mat.opacity = opacity;
+      mat.depthWrite = false;
+    }
     if (glow) {
       // Self-lit (windows stay visible in shadow): the picture itself glows.
       if (slot) { mat.emissive.set(0xffffff); mat.emissiveMap = slot.texture; } else mat.emissive.copy(tint);
