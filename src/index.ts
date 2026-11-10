@@ -7,7 +7,7 @@ export { Rock } from './models/Rock.ts';
 export { House, HOUSE_TYPES } from './models/House.ts';
 export { Castle, MAX_CASTLE_COMPLEXITY } from './models/Castle.ts';
 export { LeafTree } from './models/LeafTree.ts';
-export { StylizedTree, MAX_STYLIZED_COMPLEXITY, STYLIZED_CARDS } from './models/StylizedTree.ts';
+export { StylizedTree, MAX_STYLIZED_COMPLEXITY, STYLIZED_COVER, CARD_SIZE } from './models/StylizedTree.ts';
 export { Forest, FOREST_LEVELS, STYLIZED_FOREST_LEVELS, FOREST_TREE_TYPES, stylizedForestLevels } from './Forest.ts';
 export {
   Leaf, OvalLeaf, TriangleLeaf, OakLeaf, MapleLeaf, BirchLeaf, WillowLeaf, GinkgoLeaf, CloverLeaf, AshLeaf, LEAF_TYPES,
