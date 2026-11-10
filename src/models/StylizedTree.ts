@@ -29,6 +29,12 @@ const SHELL = 0.85;
  * leaves) to cover the core from every side, so no blob shows through.
  */
 const COVER = 40;
+/** Share of seeds whose trunk continues through the crown (`leader`). */
+export const LEADER_SHARE = 0.5;
+/** A continuing trunk gets this much thinner (top / bottom radius) between two branch tiers. */
+const TRUNK_TAPER = 0.8;
+/** Leader trees have a taller crown (radius y factor): their branch tiers need the room. */
+const LEADER_CROWN = 1.3;
 
 const Y = new Vector3(0, 1, 0);
 const vdc = (i) => { let v = 0, f = 0.5; for (; i > 0; i >>= 1, f /= 2) if (i & 1) v += f; return v; };
@@ -66,7 +72,17 @@ const ellipsoidNormal = (p, c, r, out) => out.set((p.x - c.x) / r.x ** 2, (p.y -
  *   From 5 on every clump gets as many cards as it needs to hide its core.
  *   All complexities of a seed share the same crown envelope (`crown`), so
  *   detail levels blend into each other.
+ *
+ * Leader trees (`leader`, half of the seeds, `LEADER_SHARE`): the trunk does
+ * not end at the first branches but continues through a taller crown. From 5
+ * on, 2-3 tiers of side branches leave it (2-3 per tier, bark collars smooth
+ * the joints); after every tier the trunk is a little thinner (seamless taper)
+ * and the branches higher up are shorter and carry smaller clumps, until the
+ * trunk finally splits into 2-3 limbs and ends in a top clump. Every branch and
+ * twig ends in leaves. Other seeds build exactly the same trees as before.
+ *
  * Cost: ~730 triangles at 2, ~850 at 5, ~1300 at 6, ~3000 at 8, ~6500 at 10;
+ * leader trees ~1.8x as many from 5 on (more branches and clumps);
  * always 3 draw calls (bark, blobs, cards).
  *
  * lowPoly: true gives a cheap version of the same tree for mid distances:
@@ -76,7 +92,8 @@ const ellipsoidNormal = (p, c, r, out) => out.set((p.x - c.x) / r.x ** 2, (p.y -
  * The seed picks the bark and foliage textures (`textures: {bark, foliage}`
  * pins them), the shape and the size: trunk height and thickness vary a lot
  * between seeds (taller trees get thicker trunks); `stature` (0 = short and
- * stout .. 1 = tall, -0.25..1.25) sets it instead of the seed. Options as the other trees:
+ * stout .. 1 = tall, -0.25..1.25) sets it instead of the seed; `leader` (true / false) pins
+ * whether the trunk continues through the crown. Options as the other trees:
  * trunkHeight, trunkThickness, leafSize (card size factor), trunkColor, leafColor.
  *
  * Colliders: [trunk cylinder, crown sphere] (tags 'trunk', 'crown'), enough
@@ -90,6 +107,9 @@ export class StylizedTree extends WorldModel {
   declare random: any;
   declare _subCrowns: any;
   declare _clumps: any;
+  declare leader: boolean;
+  declare _branches: any;
+  declare _tiers: any;
   constructor(options: any = {}) {
     super('StylizedTree', options);
     this.complexity = WorldModel.clampInt(options.complexity, 0, MAX_STYLIZED_COMPLEXITY, 2);
@@ -112,8 +132,11 @@ export class StylizedTree extends WorldModel {
     const cardSize = CARD_SIZE * ls;
     // Leaf shape (atlas row) of this tree, from its own stream so the shapes drawn by `rnd` stay put.
     const leafShape = Math.floor(mulberry32(this.seed ^ 0x1eaf5)() * CARD_GRID);
+    // Leader (continuing trunk), from its own stream so the other seeds keep their shapes.
+    this.leader = typeof options.leader === 'boolean' ? options.leader : mulberry32(this.seed ^ 0x1eade7)() < LEADER_SHARE;
     const H = 2.1 * th;
     const radii = new Vector3(1.9 * cs, 1.55 * cs * this.rand(0.85, 1.2), 1.9 * cs * this.rand(0.85, 1.1));
+    if (this.leader) radii.y *= LEADER_CROWN;
     const C = new Vector3(0, H + radii.y * 0.6, 0);
     this.crown = { center: C.clone(), radii: radii.clone() };
     const branched = this.complexity >= 5;
@@ -126,9 +149,11 @@ export class StylizedTree extends WorldModel {
     b.add(shared('stylized:flare', () => new CylinderGeometry(0.24, 0.42, 0.4, 7)), bark, { position: [0, 0.2, 0], scale: [tw, 1, tw] });
     // lowPoly limbs drop the end caps: bases sit inside the parent, tips end in a knot or a clump.
     const limb = shared(this.lowPoly ? 'stylized:limbOpen' : 'stylized:limb', () => { const g = new CylinderGeometry(0.6, 1, 1, 5, 1, this.lowPoly); g.translate(0, 0.5, 0); return g; });
+    this._branches = [];
     const branch = (from, to, r) => {
       const d = to.clone().sub(from);
       if (d.lengthSq() < 1e-8) return;
+      this._branches.push({ from: from.clone(), to: to.clone(), r });
       b.add(limb, bark, { position: from.toArray(), quaternion: new Quaternion().setFromUnitVectors(Y, d.clone().normalize()), scale: [r, d.length(), r] });
     };
     const blob1 = shared('stylized:blob', () => new IcosahedronGeometry(1, 1));
@@ -174,41 +199,55 @@ export class StylizedTree extends WorldModel {
       crowns.push({ center: C, radii, n });
       this._subCrowns = null;
     } else {
-      // Limbs are drawn first, so complexity 6 forks the same limbs as complexity 5.
-      const n1 = rnd() < 0.5 ? 3 : 4;
-      const limbs = [];
-      for (let i = 0; i < n1; i++) {
-        const a = a0 + (i / n1) * Math.PI * 2 + (rnd() - 0.5) * 0.6;
-        const h = this.rand(-0.2, 0.45);
-        const ring = Math.sqrt(1 - h * h);
-        const tip = C.clone().add(new Vector3(Math.cos(a) * ring, h, Math.sin(a) * ring).multiply(radii).multiplyScalar(this.rand(0.55, 0.68)));
-        // Limbs sprout from the rim of the trunk top, slightly staggered in height.
-        const drop = (0.95 - this.rand(0.72, 0.95)) * 0.5 * tw;
-        const start = new Vector3(Math.cos(a) * 0.05 * tw, forkY - drop, Math.sin(a) * 0.05 * tw);
-        limbs.push({ a, h, tip, start });
-      }
-      knot(new Vector3(0, forkY, 0), 0.18 * tw, true);
+      // Limbs are drawn first, so complexity 6 forks the same limbs as complexity 5. A limb is
+      // { a, h, tip, start, rad (base radius), s (clump size, 1 = a limb of the split trunk), G }.
       const twigs = this.complexity >= 6;
       const G = this.complexity - 5; // twig generations (L-system iterations) per limb
+      const limbs = [];
+      let splitY = forkY, splitR = 0.16 * tw;
+      if (!this.leader) {
+        const n1 = rnd() < 0.5 ? 3 : 4;
+        for (let i = 0; i < n1; i++) {
+          const a = a0 + (i / n1) * Math.PI * 2 + (rnd() - 0.5) * 0.6;
+          const h = this.rand(-0.2, 0.45);
+          const ring = Math.sqrt(1 - h * h);
+          const tip = C.clone().add(new Vector3(Math.cos(a) * ring, h, Math.sin(a) * ring).multiply(radii).multiplyScalar(this.rand(0.55, 0.68)));
+          // Limbs sprout from the rim of the trunk top, slightly staggered in height.
+          const drop = (0.95 - this.rand(0.72, 0.95)) * 0.5 * tw;
+          const start = new Vector3(Math.cos(a) * 0.05 * tw, forkY - drop, Math.sin(a) * 0.05 * tw);
+          limbs.push({ a, h, tip, start, rad: 0.13 * tw, s: 1, G });
+        }
+      } else {
+        ({ splitY, splitR } = this._leaderLimbs(limbs, { forkY, C, radii, tw, a0, G, b, bark, blob: blob0 }));
+      }
+      knot(new Vector3(0, splitY, 0), this.leader ? splitR * (0.18 / 0.16) : 0.18 * tw, true);
       for (const L of limbs) {
+        const k = L.rad / (0.13 * tw); // thickness of the limb's twigs and knots, 1 = split-trunk limb
         if (!twigs) {
-          branch(L.start, L.tip, 0.13 * tw);
-          const r = new Vector3(radii.x * 0.5, radii.y * 0.52, radii.z * 0.5).multiplyScalar(this.rand(0.9, 1.1));
+          branch(L.start, L.tip, L.rad);
+          const r = new Vector3(radii.x * 0.5 * L.s, radii.y * 0.52 * L.s, radii.z * 0.5 * L.s).multiplyScalar(this.rand(0.9, 1.1));
           this.skip(1); // was the size of a second blob
           clump(L.tip, r, L.h, L.a);
         } else {
           const fork = L.start.clone().lerp(L.tip, this.rand(0.5, 0.65));
-          branch(L.start, fork, 0.13 * tw);
-          knot(fork, 0.085 * tw);
-          this._growTwigs(fork, L, G, radii, C, tw, branch, clump);
+          branch(L.start, fork, L.rad);
+          knot(fork, 0.085 * tw * k);
+          this._growTwigs(fork, L, L.G, radii, C, tw * k, branch, clump);
         }
       }
       this._subCrowns = crowns.slice();
-      // Inner foliage on a leader from the fork, so the crown is neither hollow between the branch
-      // clumps nor lower on top than the single crown.
-      const top = C.clone().add(new Vector3(0, 0.25 * radii.y, 0));
-      branch(new Vector3(0, forkY - 0.05 * tw, 0), top, 0.1 * tw);
-      clump(top, radii.clone().multiplyScalar(0.65), 0.25, a0);
+      if (!this.leader) {
+        // Inner foliage on a leader from the fork, so the crown is neither hollow between the branch
+        // clumps nor lower on top than the single crown.
+        const top = C.clone().add(new Vector3(0, 0.25 * radii.y, 0));
+        branch(new Vector3(0, forkY - 0.05 * tw, 0), top, 0.1 * tw);
+        clump(top, radii.clone().multiplyScalar(0.65), 0.25, a0);
+      } else {
+        // The trunk itself ends in the top clump: no bare leader sticks out of the crown.
+        const top = C.clone().add(new Vector3(0, 0.45 * radii.y, 0));
+        branch(new Vector3(0, splitY - 0.05 * tw, 0), top, splitR * 0.95);
+        clump(top, radii.clone().multiplyScalar(0.5), 0.45, a0);
+      }
     }
     b.build(this);
     this.children.forEach((m: any) => { if (m.material === core) this._crownNormals(m.geometry, 0.7); });
@@ -254,6 +293,61 @@ export class StylizedTree extends WorldModel {
   }
 
   /**
+   * Skeleton of a leader tree, whose trunk continues through the crown: from the first fork
+   * (`forkY`) the trunk climbs through 2-3 tiers of side branches to its final split. Every trunk
+   * segment is `TRUNK_TAPER` as thick on top as at its base (open, 7-sided rings that meet exactly),
+   * so the trunk thins after every tier without a step. Side branches get shorter, thinner and carry
+   * smaller clumps towards the top; a bark collar smooths every joint with the trunk. Pushes the side
+   * branches and the limbs of the final split to `limbs` (fewer twig generations on the side
+   * branches); returns the split height and the trunk radius there.
+   */
+  _leaderLimbs(limbs, { forkY, C, radii, tw, a0, G, b, bark, blob }) {
+    const seg = shared('stylized:trunkSeg', () => { const g = new CylinderGeometry(TRUNK_TAPER, 1, 1, 7, 1, true); g.translate(0, 0.5, 0); return g; });
+    const tiers = this.random() < 0.5 ? 2 : 3;
+    const yTop = C.y + radii.y * this.rand(-0.05, 0.1);
+    const ys = [forkY];
+    for (let i = 1; i < tiers; i++) ys.push(forkY + ((yTop - forkY) * (i + this.rand(-0.12, 0.12))) / tiers);
+    ys.push(yTop);
+    this._tiers = [];
+    let r = 0.16 * tw;
+    for (let i = 0; i < tiers; i++) {
+      const y = ys[i], t = i / (tiers - 1); // 0 = lowest tier .. 1 = highest
+      b.add(seg, bark, { position: [0, y, 0], scale: [r, ys[i + 1] - y, r] });
+      const k = this.random() < 0.35 ? 3 : 2;
+      let len = 0;
+      for (let j = 0; j < k; j++) {
+        const a = a0 + i * 2.39996 + (j / k) * Math.PI * 2 + (this.random() - 0.5) * 0.7;
+        const out = (0.66 - 0.24 * t) * this.rand(0.9, 1.08); // reach (crown radii): shorter towards the top
+        const rise = out * ((radii.x + radii.z) / 2) * this.rand(0.45, 0.75);
+        const start = new Vector3(Math.cos(a) * 0.3 * r, y, Math.sin(a) * 0.3 * r);
+        const tip = new Vector3(Math.cos(a) * out * radii.x, y + rise, Math.sin(a) * out * radii.z);
+        const rad = r * 0.62;
+        // Collar: an ellipsoid of bark where the branch leaves the trunk, so it grows out smoothly.
+        const d = tip.clone().sub(start).normalize();
+        b.add(blob, bark, {
+          position: start.clone().addScaledVector(d, (0.85 * r) / Math.max(0.4, Math.hypot(d.x, d.z))).toArray(),
+          quaternion: new Quaternion().setFromUnitVectors(Y, d), scale: [rad * 1.45, rad * 2.6, rad * 1.45],
+        });
+        limbs.push({ a, h: (tip.y - C.y) / radii.y, tip, start, rad, s: (0.72 - 0.2 * t) * this.rand(0.92, 1.08), G: Math.max(1, G - 1) });
+        len += tip.distanceTo(start) / k;
+      }
+      this._tiers.push({ y, r, len });
+      r *= TRUNK_TAPER;
+    }
+    // Final split: a few limbs into the upper crown.
+    const n1 = this.random() < 0.5 ? 2 : 3;
+    for (let i = 0; i < n1; i++) {
+      const a = a0 + tiers * 2.39996 + (i / n1) * Math.PI * 2 + (this.random() - 0.5) * 0.6;
+      const h = this.rand(0.3, 0.65);
+      const ring = Math.sqrt(1 - h * h);
+      const tip = C.clone().add(new Vector3(Math.cos(a) * ring, h, Math.sin(a) * ring).multiply(radii).multiplyScalar(this.rand(0.5, 0.62)));
+      const start = new Vector3(Math.cos(a) * 0.3 * r, yTop - this.rand(0, 0.5) * r, Math.sin(a) * 0.3 * r);
+      limbs.push({ a, h, tip, start, rad: r * 0.8, s: 0.8, G });
+    }
+    return { splitY: yTop, splitR: r };
+  }
+
+  /**
    * Grows the twigs of one limb with an L-system and calls `crown(center, radii, hy, yaw)`
    * at every outermost twig tip. Rules (G = twig generations):
    *   A(g) -> F(g) E            if g == G
@@ -293,8 +387,8 @@ export class StylizedTree extends WorldModel {
     const reach = (1 - 0.67 ** G) / (1 - 0.67);
     for (const s of [-1, 1]) {
       const tip = L.tip.clone()
-        .addScaledVector(side, s * radii.x * this.rand(0.3, 0.42))
-        .add(new Vector3(0, radii.y * this.rand(-0.15, 0.2), 0));
+        .addScaledVector(side, s * radii.x * L.s * this.rand(0.3, 0.42))
+        .add(new Vector3(0, radii.y * L.s * this.rand(-0.15, 0.2), 0));
       const d = tip.clone().sub(fork);
       axiom.push({ c: '[' }, { c: 'B', fn: () => d.clone() }, { c: 'A', len: d.length() / reach, rad: 0.075 * tw, g: 1 }, { c: ']' });
     }
@@ -306,15 +400,15 @@ export class StylizedTree extends WorldModel {
     // Reach (in crown radii) of the clumps if all twigs are `k` times as long; complexity 5 reaches
     // `goal`: its clump (half the crown radii) round the limb tip.
     const e = new Vector3();
-    const outer = (k) => Math.max(...ends.map((o) => e.copy(o).multiplyScalar(k).add(fork).sub(C).divide(radii).length())) + 0.34 * shrink;
-    const goal = e.copy(L.tip).sub(C).divide(radii).length() + 0.5;
+    const outer = (k) => Math.max(...ends.map((o) => e.copy(o).multiplyScalar(k).add(fork).sub(C).divide(radii).length())) + 0.34 * shrink * L.s;
+    const goal = e.copy(L.tip).sub(C).divide(radii).length() + 0.5 * L.s;
     let lo = 0.7, hi = 1.8;
     for (let i = 0; i < 16; i++) { const k = (lo + hi) / 2; if (outer(k) < goal) lo = k; else hi = k; }
     const k = (lo + hi) / 2;
     runTurtle(symbols.map((sym) => (sym.c === 'F' ? { ...sym, len: sym.len * k } : sym)), fork, dir, (b) => branch(b.pos, b.end, b.rad));
     for (const o of ends) {
       const p = o.multiplyScalar(k).add(fork);
-      const r = new Vector3(radii.x * 0.33, radii.y * 0.36, radii.z * 0.33).multiplyScalar(shrink * this.rand(0.85, 1.15));
+      const r = new Vector3(radii.x * 0.33 * L.s, radii.y * 0.36 * L.s, radii.z * 0.33 * L.s).multiplyScalar(shrink * this.rand(0.85, 1.15));
       crown(p, r, (p.y - C.y) / radii.y, L.a + p.x);
     }
   }
