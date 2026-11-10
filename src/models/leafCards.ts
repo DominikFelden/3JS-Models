@@ -7,8 +7,12 @@ import { mulberry32, shared } from '../WorldModel.ts';
 import { coverageMipmaps, ALPHA_CUT } from '../forest/impostors.ts';
 import { injectBillboard } from '../forest/billboard.ts';
 
-/** Pixels of the card texture (2 x 2 different leaf clumps). */
-export const CARD_TEXTURE_SIZE = 256;
+/** The card texture is a CARD_GRID x CARD_GRID atlas of leaf-clump pictures. */
+export const CARD_GRID = 4;
+/** Leaf-clump pictures in the atlas: a row per leaf shape (`LEAF_SHAPES`), a column per arrangement. */
+export const CARD_PICTURES = CARD_GRID * CARD_GRID;
+/** Pixels of the card texture (CARD_GRID x CARD_GRID pictures of 128 px). */
+export const CARD_TEXTURE_SIZE = 512;
 
 const SRGB_TO_LINEAR = new Float32Array(256).map((_, i) => {
   const c = i / 255;
@@ -16,31 +20,118 @@ const SRGB_TO_LINEAR = new Float32Array(256).map((_, i) => {
 });
 
 /**
- * Draw the leaf clumps: four 128 px pictures of ~30 overlapping, inked leaves
- * (light greys, the material colour tints them). Pure JS, no WebGL needed.
+ * Leaf shapes, one per atlas row: width / length (`w`, ± `dw`), outline exponent (`p`: small =
+ * round, large = slender) and `skew` (< 1: widest near the stalk, > 1: near the tip).
+ */
+const LEAF_SHAPES = [
+  { w: 0.5, dw: 0.14, p: 0.75, skew: 1 },     // oval
+  { w: 0.28, dw: 0.06, p: 0.95, skew: 1 },    // slender, willow-like
+  { w: 0.78, dw: 0.12, p: 0.5, skew: 1.15 },  // round, aspen-like
+  { w: 0.6, dw: 0.1, p: 0.85, skew: 0.65 },   // pointed, birch-like
+];
+
+/**
+ * Leaf arrangements, one per atlas column. Each returns leaves { bx, by, a (direction), L }
+ * in a frame of `f` px; `fit` keeps a leaf inside the frame.
+ */
+const ARRANGEMENTS = [
+  // Rosette: leaves radiating from the middle.
+  (f, rnd, s) => {
+    const reach = f * 0.46, out = [];
+    const count = Math.round((28 + rnd() * 4) * density(s));
+    for (let j = 0; j < count; j++) {
+      const inner = j < 9;
+      const L = reach * (inner ? 0.45 + rnd() * 0.15 : 0.42 + rnd() * 0.2);
+      const start = reach * (inner ? rnd() * 0.2 : 0.2 + rnd() * 0.35);
+      const a = j * 2.39996 + (rnd() - 0.5) * 0.8, base = Math.min(start, reach - L);
+      out.push({ bx: f / 2 + Math.cos(a) * base, by: f / 2 + Math.sin(a) * base, a, L });
+    }
+    return out;
+  },
+  // Spray: leaves alternating along a curved twig across the frame, smaller towards its tip.
+  (f, rnd, s) => {
+    const out = [], a0 = -Math.PI * 0.75 + (rnd() - 0.5) * 0.4;
+    const steps = Math.round(14 * density(s)), bend = (rnd() - 0.5) * 0.8;
+    let x = f / 2 - Math.cos(a0) * f * 0.36, y = f / 2 - Math.sin(a0) * f * 0.36;
+    for (let j = 0; j < steps; j++) {
+      const t = j / (steps - 1), a = a0 + bend * t;
+      const L = f * (0.36 - 0.14 * t) * (0.85 + rnd() * 0.3);
+      for (const side of [1, -1]) {
+        if (rnd() < 0.15) continue;
+        out.push({ bx: x, by: y, a: a + side * (0.75 + rnd() * 0.35), L });
+      }
+      x += Math.cos(a) * f * 0.72 / steps;
+      y += Math.sin(a) * f * 0.72 / steps;
+    }
+    out.push({ bx: x, by: y, a: a0 + bend, L: f * 0.25 });
+    return out.reverse(); // tip leaves underneath, the big ones near the stalk on top
+  },
+  // Hanging fan: leaves drooping from a point near the top.
+  (f, rnd, s) => {
+    const out = [], cx = f * (0.42 + rnd() * 0.16), cy = f * 0.16;
+    const count = Math.round(20 * density(s));
+    for (let j = 0; j < count; j++) {
+      const a = Math.PI / 2 + (vdc(j + 1) - 0.5) * 2.6 + (rnd() - 0.5) * 0.3;
+      const start = f * rnd() * 0.25, L = f * (0.32 + rnd() * 0.22);
+      out.push({ bx: cx + Math.cos(a) * start, by: cy + Math.sin(a) * start, a, L });
+    }
+    return out;
+  },
+  // Loose cluster: a few small rosettes with gaps between them.
+  (f, rnd, s) => {
+    const out = [], k = 3 + Math.floor(rnd() * 2), a0 = rnd() * Math.PI * 2;
+    for (let c = 0; c < k; c++) {
+      const ca = a0 + (c / k) * Math.PI * 2 + (rnd() - 0.5) * 0.6, cr = f * (0.17 + rnd() * 0.08);
+      const cx = f / 2 + Math.cos(ca) * cr, cy = f / 2 + Math.sin(ca) * cr;
+      const m = Math.round(8 * density(s));
+      for (let j = 0; j < m; j++) {
+        const a = j * 2.39996 + rnd() * 0.8;
+        out.push({ bx: cx, by: cy, a, L: f * (0.2 + rnd() * 0.1) });
+      }
+    }
+    return out;
+  },
+];
+
+/** More leaves of slender shapes, fewer of round ones: every picture covers about as much of its frame. */
+const density = (s) => (0.5 / s.w) ** 0.75;
+
+const vdc = (i) => { let v = 0, f = 0.5; for (; i > 0; i >>= 1, f /= 2) if (i & 1) v += f; return v; };
+
+/** Shorten a leaf (keeping its stalk) until its tip and flanks stay inside the frame. */
+function fit(l, f, margin) {
+  const inside = (x, y) => x >= margin && y >= margin && x <= f - margin && y <= f - margin;
+  for (let i = 0; i < 12; i++) {
+    const tx = l.bx + l.dx * l.L, ty = l.by + l.dy * l.L, mx = l.bx + l.dx * l.L * 0.5, my = l.by + l.dy * l.L * 0.5;
+    const hw = l.W / 2;
+    if (inside(tx, ty) && inside(mx - l.dy * hw, my + l.dx * hw) && inside(mx + l.dy * hw, my - l.dx * hw)) return l;
+    l.L *= 0.88;
+    l.W *= 0.88;
+  }
+  return l;
+}
+
+/**
+ * Draw the leaf clumps: CARD_GRID x CARD_GRID pictures of overlapping, inked
+ * leaves (light greys, the material colour tints them). Each row has its own leaf shape
+ * (`LEAF_SHAPES`), each column its own arrangement (`ARRANGEMENTS`: rosette, spray along a
+ * twig, hanging fan, loose cluster). Pure JS, no WebGL needed.
  * Returns { data, size, mean } (mean: linear brightness of the leaf pixels).
  */
 export function drawLeafClumps(size = CARD_TEXTURE_SIZE) {
   const data = new Uint8Array(size * size * 4);
-  const frame = size / 2;
+  const frame = size / CARD_GRID;
   const margin = frame * 0.04;
-  const reach = frame / 2 - margin;
   const ink = Math.max(1, frame / 100);
   let sum = 0, n = 0;
-  for (let q = 0; q < 4; q++) {
+  for (let q = 0; q < CARD_PICTURES; q++) {
     const rnd = mulberry32(0x1eaf + q * 7919);
-    const leaves = [];
-    const count = 26 + q * 2;
-    for (let j = 0; j < count; j++) {
-      const a = j * 2.39996 + (rnd() - 0.5) * 0.8;
-      const inner = j < 9;
-      const L = reach * (inner ? 0.45 + rnd() * 0.15 : 0.42 + rnd() * 0.2);
-      const start = reach * (inner ? rnd() * 0.2 : 0.2 + rnd() * 0.35);
-      const base = Math.min(start, reach - L);
-      const dx = Math.cos(a), dy = Math.sin(a);
-      leaves.push({ bx: frame / 2 + dx * base, by: frame / 2 + dy * base, dx, dy, L, W: L * (0.5 + rnd() * 0.14) });
-    }
-    const ox = (q % 2) * frame, oy = Math.floor(q / 2) * frame;
+    const shape = LEAF_SHAPES[Math.floor(q / CARD_GRID)];
+    const leaves = ARRANGEMENTS[q % CARD_GRID](frame, rnd, shape).map((l) => fit({
+      bx: l.bx, by: l.by, dx: Math.cos(l.a), dy: Math.sin(l.a), L: l.L,
+      W: l.L * (shape.w + (rnd() - 0.5) * 2 * shape.dw),
+    }, frame, margin));
+    const ox = (q % CARD_GRID) * frame, oy = Math.floor(q / CARD_GRID) * frame;
     for (let y = 0; y < frame; y++) {
       for (let x = 0; x < frame; x++) {
         let shade = -1;
@@ -50,7 +141,7 @@ export function drawLeafClumps(size = CARD_TEXTURE_SIZE) {
           const u = (px * l.dx + py * l.dy) / l.L;
           if (u <= 0 || u >= 1) continue;
           const v = -px * l.dy + py * l.dx;
-          const hw = (l.W / 2) * Math.sin(Math.PI * u) ** 0.75;
+          const hw = (l.W / 2) * Math.sin(Math.PI * u ** shape.skew) ** shape.p;
           const edge = hw - Math.abs(v);
           if (edge <= 0) continue;
           if (edge < ink) shade = 0.3; // ink outline
@@ -78,7 +169,7 @@ export function leafCardTexture() {
     t.wrapS = t.wrapT = ClampToEdgeWrapping;
     t.magFilter = LinearFilter;
     t.minFilter = LinearMipmapLinearFilter;
-    t.mipmaps = coverageMipmaps(data, size, size, size / 2);
+    t.mipmaps = coverageMipmaps(data, size, size, size / CARD_GRID);
     t.generateMipmaps = false;
     t.flipY = false;
     t.userData.mean = mean;
@@ -126,8 +217,9 @@ export function leafCardDepthMaterial() {
 }
 
 /**
- * Card geometry. `cards`: [{ center: Vector3, size, angle, clump (0..3),
- * normal: Vector3, tint: [r,g,b] }]. Positions hold a fixed quad (used
+ * Card geometry. `cards`: [{ center: Vector3, size, angle, clump (0 .. CARD_PICTURES - 1),
+ * normal: Vector3, tint: [r,g,b], aspect (width / height, default 1), flip (mirrored) }].
+ * Positions hold a fixed quad (used
  * only where no shader runs); bounds are widened by the card size so culling
  * stays correct whichever way the cards turn.
  */
@@ -139,18 +231,19 @@ export function leafCardGeometry(cards) {
   const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   let reach = 0;
   cards.forEach((c, i) => {
-    const h = c.size / 2, cs = Math.cos(c.angle), sn = Math.sin(c.angle);
-    const u0 = (c.clump % 2) * 0.5, v0 = Math.floor(c.clump / 2) * 0.5;
-    reach = Math.max(reach, h * Math.SQRT2);
+    const k = Math.sqrt(c.aspect ?? 1), hx = (c.size / 2) * k, hy = c.size / 2 / k;
+    const cs = Math.cos(c.angle), sn = Math.sin(c.angle), t = 1 / CARD_GRID;
+    const u0 = (c.clump % CARD_GRID) * t, v0 = Math.floor(c.clump / CARD_GRID) * t;
+    reach = Math.max(reach, Math.hypot(hx, hy));
     corners.forEach(([x, y], k) => {
       const o = i * 4 + k;
-      const cx = (x * cs - y * sn) * h, cy = (x * sn + y * cs) * h;
+      const cx = x * hx * cs - y * hy * sn, cy = x * hx * sn + y * hy * cs;
       pos.set([c.center.x + cx, c.center.y + cy, c.center.z], o * 3);
       ctr.set([c.center.x, c.center.y, c.center.z], o * 3);
       cor.set([cx, cy], o * 2);
       nor.set([c.normal.x, c.normal.y, c.normal.z], o * 3);
       col.set(c.tint, o * 3);
-      uv.set([u0 + (x + 1) * 0.25, v0 + (y + 1) * 0.25], o * 2);
+      uv.set([u0 + ((c.flip ? -x : x) + 1) * 0.5 * t, v0 + (y + 1) * 0.5 * t], o * 2);
     });
     const b = i * 4;
     index.push(b, b + 1, b + 2, b, b + 2, b + 3);

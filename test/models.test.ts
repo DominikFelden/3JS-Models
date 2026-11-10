@@ -437,8 +437,8 @@ test('Forest canopy covers the trees at crown height and offers a canopy texture
   pinned.dispose();
 });
 
-import { StylizedTree, STYLIZED_CARDS, STYLIZED_FOREST_LEVELS } from '../src/index.ts';
-import { drawLeafClumps } from '../src/models/leafCards.ts';
+import { StylizedTree, STYLIZED_COVER, STYLIZED_FOREST_LEVELS } from '../src/index.ts';
+import { drawLeafClumps, CARD_GRID, CARD_PICTURES } from '../src/models/leafCards.ts';
 
 const cardMesh = (t) => t.children.find((m) => m.geometry?.attributes.cardCenter);
 const triangles = (t) => t.children.reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3, 0);
@@ -447,7 +447,7 @@ test('StylizedTree: cheap blob core plus billboard leaf cards; lower complexitie
   const full = new StylizedTree({ seed: 9, complexity: 4 });
   const mid = new StylizedTree({ seed: 9, complexity: 2 });
   assert.deepStrictEqual(full.getColliderTags(), ['trunk', 'crown']);
-  assert.strictEqual(cardMesh(mid).geometry.attributes.cardCenter.count, STYLIZED_CARDS[2] * 4);
+  assert.ok(mid.cardCount > 20 && mid.cardCount < full.cardCount, 'complexity sets the number of cards');
   assert.strictEqual(cardMesh(new StylizedTree({ seed: 9, complexity: 0 })), undefined, 'complexity 0: blobs only');
   const a = cardMesh(full).geometry.attributes.cardCenter.array, b = cardMesh(mid).geometry.attributes.cardCenter.array;
   assert.deepStrictEqual(Array.from(a.slice(0, b.length)), Array.from(b), 'first cards are shared between levels');
@@ -468,19 +468,95 @@ test('StylizedTree: cheap blob core plus billboard leaf cards; lower complexitie
   [full, mid, big].forEach((t) => t.dispose());
 });
 
-test('leaf-card clumps are cut-out pictures with ink outlines', () => {
-  const { data, size, mean } = drawLeafClumps(128);
-  const f = size / 2;
-  for (let q = 0; q < 4; q++) {
-    let inside = 0, ink = 0;
+test('leaf-card clumps are different cut-out pictures with ink outlines', () => {
+  const { data, size, mean } = drawLeafClumps(256);
+  const f = size / CARD_GRID, masks = [];
+  for (let q = 0; q < CARD_PICTURES; q++) {
+    let inside = 0, ink = 0, mask = '';
     for (let y = 0; y < f; y++) for (let x = 0; x < f; x++) {
-      const i = ((Math.floor(q / 2) * f + y) * size + (q % 2) * f + x) * 4;
+      const i = ((Math.floor(q / CARD_GRID) * f + y) * size + (q % CARD_GRID) * f + x) * 4;
       if (data[i + 3]) { inside++; if (data[i] < 100) ink++; }
+      if (x % 4 === 0 && y % 4 === 0) mask += data[i + 3] ? 1 : 0;
     }
-    assert.ok(inside / (f * f) > 0.3 && inside / (f * f) < 0.85, `clump ${q} covers part of its frame`);
+    assert.ok(inside / (f * f) > 0.25 && inside / (f * f) < 0.85, `clump ${q} covers part of its frame (${inside / (f * f)})`);
     assert.ok(ink > 0, `clump ${q} is inked`);
+    masks.push(mask);
+  }
+  // Every picture has its own silhouette.
+  for (let a = 0; a < masks.length; a++) for (let b = a + 1; b < masks.length; b++) {
+    let diff = 0;
+    for (let i = 0; i < masks[a].length; i++) if (masks[a][i] !== masks[b][i]) diff++;
+    assert.ok(diff / masks[a].length > 0.1, `pictures ${a} and ${b} differ (${diff / masks[a].length})`);
   }
   assert.ok(mean > 0.2 && mean < 1);
+});
+
+const cardSizes = (t) => {
+  const c = cardMesh(t).geometry.attributes.cardCorner, s = [];
+  for (let i = 0; i < c.count; i += 4) s.push(2 * Math.hypot(c.getX(i), c.getY(i)) / Math.SQRT2);
+  return s;
+};
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+
+test('StylizedTree leaf cards keep their size at every complexity; only leafSize changes it', () => {
+  const sizes = [];
+  for (let c = 1; c <= 10; c++) for (const lowPoly of [false, true]) {
+    const t = new StylizedTree({ seed: 9, complexity: c, lowPoly });
+    sizes.push(mean(cardSizes(t)));
+    t.dispose();
+  }
+  assert.ok(Math.max(...sizes) / Math.min(...sizes) < 1.08, sizes.map((s) => s.toFixed(2)).join(' '));
+  const big = new StylizedTree({ seed: 9, complexity: 6, leafSize: 1.5 });
+  assert.ok(Math.abs(mean(cardSizes(big)) / sizes[0] - 1.5) < 0.1, 'leafSize scales the cards');
+  big.dispose();
+});
+
+test('StylizedTree crown keeps its reach as complexity grows', () => {
+  for (const seed of [3, 9, 21]) {
+    const reach = (c) => {
+      const t = new StylizedTree({ seed, complexity: c });
+      const a = cardMesh(t).geometry.attributes.cardCenter, C = t.crown.center, R = t.crown.radii;
+      let side = 0, top = 0;
+      for (let i = 0; i < a.count; i += 4) {
+        side = Math.max(side, Math.hypot((a.getX(i) - C.x) / R.x, (a.getZ(i) - C.z) / R.z));
+        top = Math.max(top, (a.getY(i) - C.y) / R.y);
+      }
+      t.dispose();
+      return { side, top };
+    };
+    const five = reach(5);
+    for (const c of [6, 8, 10]) {
+      const r = reach(c);
+      assert.ok(r.side > five.side * 0.85 && r.top > five.top * 0.85, `seed ${seed}, ${c}: ${JSON.stringify(r)} vs ${JSON.stringify(five)}`);
+    }
+  }
+});
+
+test('StylizedTree leaf cards vary: pictures, stretch and mirroring', () => {
+  const t = new StylizedTree({ seed: 9, complexity: 5 });
+  const g = cardMesh(t).geometry, uv = g.attributes.uv, cor = g.attributes.cardCorner;
+  const pictures = new Set(), aspects = [];
+  let flipped = 0;
+  for (let i = 0; i < uv.count; i += 4) {
+    const u0 = Math.min(uv.getX(i), uv.getX(i + 1)), v0 = Math.min(uv.getY(i), uv.getY(i + 2));
+    pictures.add(`${Math.round(u0 * CARD_GRID)},${Math.round(v0 * CARD_GRID)}`);
+    if (uv.getX(i) > uv.getX(i + 1)) flipped++;
+    const w = Math.hypot(cor.getX(i + 1) - cor.getX(i), cor.getY(i + 1) - cor.getY(i));
+    const h = Math.hypot(cor.getX(i + 3) - cor.getX(i), cor.getY(i + 3) - cor.getY(i));
+    aspects.push(w / h);
+  }
+  const n = uv.count / 4;
+  assert.strictEqual(pictures.size, CARD_GRID, 'all arrangements of the tree\'s leaf shape');
+  assert.ok(flipped > n * 0.3 && flipped < n * 0.7, `${flipped} of ${n} mirrored`);
+  assert.ok(Math.min(...aspects) < 0.9 && Math.max(...aspects) > 1.1, 'stretched both ways');
+  const rows = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((seed) => {
+    const s = new StylizedTree({ seed, complexity: 2 });
+    const v = Math.floor(Math.min(...[0, 1, 2, 3].map((k) => cardMesh(s).geometry.attributes.uv.getY(k))) * CARD_GRID + 1e-6);
+    s.dispose();
+    return v;
+  }));
+  assert.ok(rows.size > 1, 'trees differ in leaf shape');
+  t.dispose();
 });
 
 test('Forest of stylized trees: same tiers, far fewer triangles than leaf trees', () => {
@@ -519,9 +595,9 @@ test('StylizedTree 5 and 6 branch out into clumped crowns; lowPoly keeps the sha
   assert.ok(five._subCrowns.length >= 3 && six._subCrowns.length === 2 * five._subCrowns.length, 'limbs, then two twigs per limb');
   for (const t of [five, six, low]) {
     assert.ok(t.cardCount >= 8 * t._clumps.length, 'every clump gets a full shell of cards');
-    assert.ok(t._subCrowns.every((cr) => cr.n === undefined && cr.size > 0), 'branch clumps get cards sized to cover their core');
+    assert.ok(t._subCrowns.every((cr) => cr.n >= 8), 'branch clumps get cards to cover their core');
   }
-  assert.ok(five.cardCount > STYLIZED_CARDS[4] && low.cardCount < six.cardCount, `${five.cardCount} / ${six.cardCount} / ${low.cardCount}`);
+  assert.ok(STYLIZED_COVER[4] <= 1 && five.cardCount > one.cardCount && low.cardCount < six.cardCount, `${five.cardCount} / ${six.cardCount} / ${low.cardCount}`);
   assert.ok(triangles(one) < triangles(five) && triangles(five) < triangles(six) && triangles(six) < 2000, `${triangles(five)} / ${triangles(six)}`);
   assert.ok(triangles(low) * 2 < triangles(six), 'lowPoly is much cheaper');
   const centres = (t) => { const a = cardMesh(t).geometry.attributes.cardCenter; const s = new Set(); for (let i = 0; i < a.count; i += 4) s.add(`${a.getX(i)},${a.getY(i)},${a.getZ(i)}`); return s; };

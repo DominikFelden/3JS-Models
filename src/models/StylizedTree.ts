@@ -2,17 +2,23 @@ import { CylinderGeometry, IcosahedronGeometry, Mesh, Quaternion, Vector3, Color
 import { WorldModel, MergeBuilder, shared, mulberry32 } from '../WorldModel.ts';
 import { treeStyle, lsystem, runTurtle } from './branching.ts';
 import { pooledMaterial, textureMean } from '../textures/pool.ts';
-import { leafCardMaterial, leafCardDepthMaterial, leafCardGeometry } from './leafCards.ts';
+import { leafCardMaterial, leafCardDepthMaterial, leafCardGeometry, CARD_GRID } from './leafCards.ts';
 
 /** Highest StylizedTree complexity. */
 export const MAX_STYLIZED_COMPLEXITY = 10;
 
 /**
- * Leaf cards of the single crown per complexity 0..4 (lower complexities keep the first cards of
- * higher ones, same seed; fewer cards are bigger, so they still hide the core). From 5 on every
- * branch clump gets as many cards as it needs to hide its core.
+ * Share of the cards needed to hide the core that the single crown gets per complexity 0..4
+ * (lower complexities keep the first cards of higher ones, same seed). Cards keep their size
+ * (`CARD_SIZE`): fewer cards leave gaps that show the dark core, never bigger leaves. From 5 on
+ * every branch clump gets all the cards it needs.
  */
-export const STYLIZED_CARDS = [0, 20, 34, 50, 70];
+export const STYLIZED_COVER = [0, 0.5, 0.65, 0.8, 0.9];
+/** Share of the needed cards of `lowPoly` trees. */
+const LOW_POLY_COVER = 0.6;
+
+/** Mean leaf-card size (world units, times `leafSize`): the same at every complexity and LOD. */
+export const CARD_SIZE = 0.9;
 
 /** Core blobs fill this share of their clump's radius; the leaf cards sit around them. */
 const CORE = 0.55;
@@ -38,26 +44,34 @@ const ellipsoidNormal = (p, c, r, out) => out.set((p.x - c.x) / r.x ** 2, (p.y -
  * crown is lit as one soft volume; the cards have no specular sheen (it would
  * wash them out from below).
  *
+ * Leaves keep their size: every card is `CARD_SIZE` x `leafSize` (±15%) at
+ * every complexity and in `lowPoly`; complexity only changes how many there
+ * are. Each tree has one leaf shape (oval, slender, round or pointed, from its
+ * seed); each card shows one of four arrangements of it (rosette, spray along
+ * a twig, hanging fan, loose cluster), stretched and mirrored at random.
+ *
  * complexity 0..10 (default 2):
- *   0..4  one crown on three limbs, with `STYLIZED_CARDS` leaf cards
- *         (0 = full-size blobs only, for far away). Same crown for every
- *         complexity of a seed.
+ *   0..4  one crown on three limbs, with the `STYLIZED_COVER` share of the
+ *         cards it needs to hide its core (0 = full-size blobs only, for far
+ *         away). Same crown for every complexity of a seed.
  *   5     first-level branching: the trunk splits (bark knot at the fork) into
  *         3-4 limbs, each ending in its own leaf clump.
  *   6..10 each limb forks into twigs by an L-system (Lindenmayer system):
  *         6 = two twigs per limb, every further level splits each twig tip
  *         into one or two finer twigs (stochastic rule), so 10 has 5 twig
  *         generations. Every twig ends in its own leaf clump (dozens at 10):
- *         leaves grow from the twigs, wherever they reach.
+ *         leaves grow from the twigs, wherever they reach. The twigs are
+ *         scaled so the outermost clumps reach as far as at 5: more
+ *         generations never shrink the crown.
  *   From 5 on every clump gets as many cards as it needs to hide its core.
  *   All complexities of a seed share the same crown envelope (`crown`), so
  *   detail levels blend into each other.
- * Cost: ~650 triangles at 2, ~850 at 5, ~1200 at 6, ~3000 at 8, ~7000 at 10;
+ * Cost: ~730 triangles at 2, ~850 at 5, ~1300 at 6, ~3000 at 8, ~6500 at 10;
  * always 3 draw calls (bark, blobs, cards).
  *
  * lowPoly: true gives a cheap version of the same tree for mid distances:
- * 20-sided blobs, capless branches and about half the cards (bigger, so they
- * still hide the blobs); ~2x fewer triangles.
+ * 20-sided blobs, capless branches and 60% of the cards (same size, the dark
+ * core shows in the gaps); ~2x fewer triangles.
  *
  * The seed picks the bark and foliage textures (`textures: {bark, foliage}`
  * pins them), the shape and the size: trunk height and thickness vary a lot
@@ -95,6 +109,9 @@ export class StylizedTree extends WorldModel {
     const tw = this.rand(0.75, 1.3) * (0.7 + 0.3 * tall) * (st.trunkThickness ?? 1);
     const cs = this.rand(0.8, 1.25) * (0.85 + 0.15 * tall);
     const ls = st.leafSize ?? 1;
+    const cardSize = CARD_SIZE * ls;
+    // Leaf shape (atlas row) of this tree, from its own stream so the shapes drawn by `rnd` stay put.
+    const leafShape = Math.floor(mulberry32(this.seed ^ 0x1eaf5)() * CARD_GRID);
     const H = 2.1 * th;
     const radii = new Vector3(1.9 * cs, 1.55 * cs * this.rand(0.85, 1.2), 1.9 * cs * this.rand(0.85, 1.1));
     const C = new Vector3(0, H + radii.y * 0.6, 0);
@@ -125,12 +142,16 @@ export class StylizedTree extends WorldModel {
 
     // Leaf clumps: { center, radii, n (cards) or size (card size) }. Each has a small dark core blob
     // deep inside a shell of leaf cards, so from every side (also from below and above) only leaves show.
+    // A clump needs `needed` cards of `cardSize` to hide its core; with fewer (`cover` < 1) its core
+    // grows a little, so the gaps between the leaves show dark foliage deep inside.
     const crowns = [];
-    const cards0 = STYLIZED_CARDS[Math.min(this.complexity, 4)];
-    const deep = cards0 > 0 || branched ? CORE : 1; // complexity 0 (no cards) keeps full-size blobs
-    const clump = (center, r, hy, yaw, card) => {
-      addBlob(center, r.clone().multiplyScalar(CORE), this._tint(0.3 + 0.3 * hy, 0.6), yaw);
-      crowns.push({ center, radii: r, ...card });
+    const needed = (r) => COVER * (SHELL * (r.x + r.y + r.z) / 3 / cardSize) ** 2;
+    const coreScale = (cover) => (cover > 0 ? CORE + (1 - CORE) * 0.4 * (1 - Math.min(1, cover)) : 1);
+    const clump = (center, r, hy, yaw) => {
+      const need = needed(r);
+      const n = Math.max(8, Math.ceil(need * (this.lowPoly ? LOW_POLY_COVER : 1)));
+      addBlob(center, r.clone().multiplyScalar(coreScale(n / need)), this._tint(0.3 + 0.3 * hy, 0.6), yaw);
+      crowns.push({ center, radii: r, n });
     };
     if (!branched) {
       for (let i = 0; i < 3; i++) {
@@ -138,17 +159,19 @@ export class StylizedTree extends WorldModel {
         const dir = new Vector3(Math.cos(a) * 0.8, 1, Math.sin(a) * 0.8).normalize();
         b.add(limb, bark, { position: [0, H * this.rand(0.8, 0.95), 0], quaternion: new Quaternion().setFromUnitVectors(Y, dir), scale: [0.09 * tw, radii.y * 0.95, 0.09 * tw] });
       }
+      const n = Math.ceil(needed(radii) * STYLIZED_COVER[Math.min(this.complexity, 4)] * (this.lowPoly ? LOW_POLY_COVER : 1));
+      const deep = coreScale(STYLIZED_COVER[Math.min(this.complexity, 4)]), dark = n > 0 ? 0.2 : 0;
       // Core: one big blob and a ring of smaller ones, darker inside the crown.
-      addBlob(C, radii.clone().multiplyScalar(0.72 * deep), this._tint(0.45, deep < 1 ? 0.6 : 0.8));
+      addBlob(C, radii.clone().multiplyScalar(0.72 * deep), this._tint(0.45, 0.8 - dark));
       const blobs = 5 + (rnd() < 0.5 ? 1 : 0);
       for (let i = 0; i < blobs; i++) {
         const a = a0 + (i / blobs) * Math.PI * 2 + (rnd() - 0.5) * 0.7;
         const h = this.rand(-0.35, 0.55);
         const d = new Vector3(Math.cos(a) * Math.sqrt(1 - h * h), h, Math.sin(a) * Math.sqrt(1 - h * h));
         const s = this.rand(0.42, 0.55);
-        addBlob(C.clone().add(d.clone().multiply(radii).multiplyScalar(0.45 * deep)), radii.clone().multiplyScalar(s * deep), this._tint(0.5 + 0.5 * h, deep < 1 ? 0.65 : 0.85), a);
+        addBlob(C.clone().add(d.clone().multiply(radii).multiplyScalar(0.45 * deep)), radii.clone().multiplyScalar(s * deep), this._tint(0.5 + 0.5 * h, 0.85 - dark), a);
       }
-      crowns.push({ center: C, radii, n: Math.round(cards0 * (this.lowPoly ? 0.5 : 1)) });
+      crowns.push({ center: C, radii, n });
       this._subCrowns = null;
     } else {
       // Limbs are drawn first, so complexity 6 forks the same limbs as complexity 5.
@@ -172,39 +195,38 @@ export class StylizedTree extends WorldModel {
           branch(L.start, L.tip, 0.13 * tw);
           const r = new Vector3(radii.x * 0.5, radii.y * 0.52, radii.z * 0.5).multiplyScalar(this.rand(0.9, 1.1));
           this.skip(1); // was the size of a second blob
-          clump(L.tip, r, L.h, L.a, { size: 0.9 * cs });
+          clump(L.tip, r, L.h, L.a);
         } else {
           const fork = L.start.clone().lerp(L.tip, this.rand(0.5, 0.65));
           branch(L.start, fork, 0.13 * tw);
           knot(fork, 0.085 * tw);
-          this._growTwigs(fork, L, G, radii, C, tw, branch, (c, r, hy, yaw, size) => clump(c, r, hy, yaw, { size: size * cs }));
+          this._growTwigs(fork, L, G, radii, C, tw, branch, clump);
         }
       }
       this._subCrowns = crowns.slice();
-      // Inner foliage in the middle, so the crown isn't hollow between the branch clumps.
-      clump(C.clone().add(new Vector3(0, 0.05 * radii.y, 0)), radii.clone().multiplyScalar(twigs ? 0.6 : 0.7), 0, a0, { size: 0.9 * cs });
+      // Inner foliage on a leader from the fork, so the crown is neither hollow between the branch
+      // clumps nor lower on top than the single crown.
+      const top = C.clone().add(new Vector3(0, 0.25 * radii.y, 0));
+      branch(new Vector3(0, forkY - 0.05 * tw, 0), top, 0.1 * tw);
+      clump(top, radii.clone().multiplyScalar(0.65), 0.25, a0);
     }
     b.build(this);
     this.children.forEach((m: any) => { if (m.material === core) this._crownNormals(m.geometry, 0.7); });
 
     // Leaf cards fill a shell all round each clump (outer 40% of its radius): a golden-angle spiral
-    // with van der Corput heights spreads any count evenly. A clump gets enough cards to cover its
-    // core from every side (`COVER`): the single crown gets `STYLIZED_CARDS` cards sized to cover it,
-    // branch clumps get as many cards of their size as they need. Every clump has its own PRNG, so
-    // its first cards never move when more are added (complexity, lowPoly).
+    // with van der Corput heights spreads any count evenly. All cards share one size (`CARD_SIZE`
+    // times `leafSize`, ±15%), whatever the complexity: the single crown gets its `STYLIZED_COVER`
+    // share of the cards it needs to cover its core from every side (`COVER`), branch clumps all. Every
+    // clump has its own PRNG, so its first cards never move when more are added (complexity,
+    // lowPoly). Each card picks one of the arrangements of the tree's leaf shape, stretched and
+    // mirrored at random, so no two neighbours look alike.
     this._clumps = crowns;
     const cards = [];
     const seeds = crowns.map(() => (rnd() * 0x100000000) >>> 0);
     crowns.forEach((cr, k) => {
       const r = mulberry32(seeds[k]);
       const rand = (lo, hi) => lo + r() * (hi - lo);
-      const shell = SHELL * (cr.radii.x + cr.radii.y + cr.radii.z) / 3;
-      let { n, size } = cr;
-      if (n === undefined) {
-        size *= this.lowPoly ? 1.4 : 1;
-        n = Math.max(8, Math.ceil(COVER * (shell / size) ** 2));
-      } else if (n > 0) size = shell * Math.sqrt(COVER / n);
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; i < cr.n; i++) {
         const h = -0.97 + 1.94 * vdc(i + 1);
         const ring = Math.sqrt(1 - h * h);
         const a = a0 + i * 2.39996 + (r() - 0.5) * 0.5;
@@ -213,7 +235,8 @@ export class StylizedTree extends WorldModel {
         const hy = (center.y - C.y) / radii.y;
         const tint = this._tint(0.5 + 0.5 * hy, 0.8 + 0.2 * (depth - 0.6) / 0.4, rand);
         cards.push({
-          center, size: rand(0.85, 1.15) * size * ls, angle: r() * Math.PI * 2, clump: Math.floor(r() * 4),
+          center, size: rand(0.85, 1.15) * cardSize, angle: r() * Math.PI * 2,
+          clump: leafShape * CARD_GRID + Math.floor(r() * CARD_GRID), aspect: rand(0.8, 1.25), flip: r() < 0.5,
           normal: this._crownNormal(center, null, 0), tint,
         });
       }
@@ -231,12 +254,14 @@ export class StylizedTree extends WorldModel {
   }
 
   /**
-   * Grows the twigs of one limb with an L-system and calls `crown(center, radii, hy, yaw, size)`
+   * Grows the twigs of one limb with an L-system and calls `crown(center, radii, hy, yaw)`
    * at every outermost twig tip. Rules (G = twig generations):
    *   A(g) -> F(g) E            if g == G
    *   A(g) -> F(g) C C?         otherwise: two children (one is kept with probability 0.45 from g = 2)
    *   C(g) -> [ T B A(g+1) ]    splits off at the parent's tip, bends sideways and up
    * Generation 1 is always the two twigs reaching to the limb's crown, one on each side.
+   * Afterwards all twigs are scaled so the outermost clump reaches as far out of the crown as the
+   * limb's single clump at complexity 5: more generations never shrink the crown.
    */
   _growTwigs(fork, L, G, radii, C, tw, branch, crown) {
     const side = new Vector3(-Math.sin(L.a), 0, Math.cos(L.a));
@@ -256,7 +281,7 @@ export class StylizedTree extends WorldModel {
         const lat = 0.55 + 0.3 * rnd(), jit = new Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.3);
         return [
           { c: '[' }, { c: 'T', t },
-          { c: 'B', fn: (d) => d.clone().addScaledVector(side, sd * lat).add(jit).add(new Vector3(0, 0.3, 0)) },
+          { c: 'B', fn: (d) => d.clone().addScaledVector(side, sd * lat).add(jit).add(new Vector3(0, 0.3 / g, 0)) },
           { c: 'A', len: len * (0.6 + 0.14 * rnd()), rad: rad * 0.72, g },
           { c: ']' },
         ];
@@ -269,18 +294,28 @@ export class StylizedTree extends WorldModel {
     for (const s of [-1, 1]) {
       const tip = L.tip.clone()
         .addScaledVector(side, s * radii.x * this.rand(0.3, 0.42))
-        .add(new Vector3(0, radii.y * this.rand(-0.05, 0.25), 0));
+        .add(new Vector3(0, radii.y * this.rand(-0.15, 0.2), 0));
       const d = tip.clone().sub(fork);
       axiom.push({ c: '[' }, { c: 'B', fn: () => d.clone() }, { c: 'A', len: d.length() / reach, rad: 0.075 * tw, g: 1 }, { c: ']' });
     }
     // Leaves grow where the twigs end: every outermost twig tip carries its own clump.
+    const symbols = lsystem(axiom, rules, 4 * G);
+    const dir = L.tip.clone().sub(L.start);
     const ends = [];
-    runTurtle(lsystem(axiom, rules, 4 * G), fork, L.tip.clone().sub(L.start), (b) => branch(b.pos, b.end, b.rad), (sym, p) => {
-      if (sym.c === 'E') ends.push(p);
-    });
-    for (const p of ends) {
+    runTurtle(symbols, fork, dir, () => {}, (sym, p) => { if (sym.c === 'E') ends.push(p.sub(fork)); });
+    // Reach (in crown radii) of the clumps if all twigs are `k` times as long; complexity 5 reaches
+    // `goal`: its clump (half the crown radii) round the limb tip.
+    const e = new Vector3();
+    const outer = (k) => Math.max(...ends.map((o) => e.copy(o).multiplyScalar(k).add(fork).sub(C).divide(radii).length())) + 0.34 * shrink;
+    const goal = e.copy(L.tip).sub(C).divide(radii).length() + 0.5;
+    let lo = 0.7, hi = 1.8;
+    for (let i = 0; i < 16; i++) { const k = (lo + hi) / 2; if (outer(k) < goal) lo = k; else hi = k; }
+    const k = (lo + hi) / 2;
+    runTurtle(symbols.map((sym) => (sym.c === 'F' ? { ...sym, len: sym.len * k } : sym)), fork, dir, (b) => branch(b.pos, b.end, b.rad));
+    for (const o of ends) {
+      const p = o.multiplyScalar(k).add(fork);
       const r = new Vector3(radii.x * 0.33, radii.y * 0.36, radii.z * 0.33).multiplyScalar(shrink * this.rand(0.85, 1.15));
-      crown(p, r, (p.y - C.y) / radii.y, L.a + p.x, 0.9 * shrink);
+      crown(p, r, (p.y - C.y) / radii.y, L.a + p.x);
     }
   }
 
