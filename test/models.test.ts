@@ -626,6 +626,37 @@ test('StylizedTree 7..10: L-system twigs add crowns and cards, same crown envelo
   base.dispose();
 });
 
+test('StylizedTree leader: half the trunks continue through tiers of shorter branches; every branch ends in leaves', () => {
+  let leaders = 0;
+  for (let seed = 0; seed < 200; seed++) if (new StylizedTree({ seed, complexity: 0 }).leader) leaders++;
+  assert.ok(leaders > 80 && leaders < 120, `${leaders} of 200 seeds`);
+  const split = new StylizedTree({ seed: 9, leader: false });
+  assert.strictEqual(new StylizedTree({ seed: 9, leader: true }).leader, true);
+  for (const c of [5, 6, 8, 10]) for (const lowPoly of [false, true]) for (const leader of [true, false]) {
+    const t = new StylizedTree({ seed: 9, complexity: c, leader, lowPoly });
+    if (leader) {
+      assert.ok(t.crown.radii.y > split.crown.radii.y * 1.2, 'taller crown');
+      assert.deepStrictEqual(t.crown, new StylizedTree({ seed: 9, complexity: 2, leader }).crown, 'same crown at every complexity');
+      const T = t._tiers;
+      assert.ok(T.length >= 2 && T.length <= 3, 'tiers of side branches');
+      for (let i = 1; i < T.length; i++) {
+        assert.ok(T[i].y > T[i - 1].y && T[i].r < T[i - 1].r, 'the trunk climbs and thins after every tier');
+        assert.ok(T[i].len < T[i - 1].len, `branches higher up are shorter (${T[i].len} vs ${T[i - 1].len})`);
+      }
+    } else assert.strictEqual(t._tiers, undefined);
+    // A branch either forks on (a twig grows out of its tip) or ends inside a leaf clump.
+    for (const br of t._branches) {
+      const len = br.to.distanceTo(br.from);
+      const leafy = t._clumps.some((cl) => br.to.clone().sub(cl.center).divide(cl.radii).length() < 0.3);
+      const forks = t._branches.some((o) => o !== br && o.from.distanceTo(br.to) < 0.07 * len + 1e-6);
+      assert.ok(leafy || forks, `${c}${lowPoly ? ' lowPoly' : ''}: no bare branch tip`);
+    }
+    assert.ok(t.children.length <= 3, 'still 3 draw calls');
+    t.dispose();
+  }
+  split.dispose();
+});
+
 test('StylizedTree stature: short and stout .. tall', () => {
   const short = new StylizedTree({ seed: 4, stature: 0 }), tall = new StylizedTree({ seed: 4, stature: 1 });
   const [ts, tt] = [short, tall].map((t) => t._shapes.find((c) => c.tag === 'trunk'));

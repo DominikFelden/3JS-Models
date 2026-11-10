@@ -16,6 +16,8 @@ const TREE_PARAMS = [
   { key: 'trunkColor', label: 'Trunk colour', type: 'color', value: null, fallback: '#7a5230' },
   { key: 'leafColor', label: 'Leaf colour', type: 'color', value: null, fallback: '#4a9a2a' },
 ];
+/** Stylized-Tree: does the trunk continue through the crown? `auto` = from the seed (half of them). */
+const LEADER_PARAM = { key: 'leader', label: 'Trunk', type: 'select', value: 'auto', options: [['auto', 'Auto (seed)'], ['on', 'Continues'], ['off', 'Splits']] };
 const LEAF_TYPE_PARAM = {
   key: 'leafType', label: 'Leaf type', type: 'select', value: 'oak',
   options: Object.keys(LEAF_TYPES).map((k) => [k, k[0].toUpperCase() + k.slice(1)]),
@@ -66,7 +68,7 @@ const unsorted = [
   { name: 'PineTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new PineTree(o) },
   { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new OakTree(o) },
   { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, params: [LEAF_TYPE_PARAM, ...TREE_PARAMS], create: (o) => new LeafTree(o) },
-  { name: 'Stylized-Tree', complexity: { max: MAX_STYLIZED_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new StylizedTree(o) },
+  { name: 'Stylized-Tree', complexity: { max: MAX_STYLIZED_COMPLEXITY, value: 2 }, params: [...TREE_PARAMS, LEADER_PARAM], create: (o) => new StylizedTree({ ...o, leader: { on: true, off: false }[o.leader] }) },
   { name: 'Forest', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(1000, 160), fog: [150, 1400], create: forest },
   {
     name: 'Forest (fly-over)', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(30000, 1000), fog: [200, 1600],
