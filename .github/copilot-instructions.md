@@ -8,3 +8,5 @@ We are aiming for a hand drawn style and detail level similar to games like gens
 All models should have some randomness on generation, they should change dimensions, shape, colors and textures. Given a seed the same models should always be created.
 
 Also focus on writing human readable code with descriptive variable and function names and comments describing how and why things are implemented in a certain way.
+
+No physics are implemented but every model needs to expose its geometric information so collision detection and physics can be handled there.
