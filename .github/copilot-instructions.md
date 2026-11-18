@@ -1,20 +1,10 @@
-# Copilot instructions
+This repository is a collection of models for 3D web games meant for Mobile.
+Models are created with code and will be imported into other gaming projects.
 
-A collection of 3D models built from simple three.js geometries (TypeScript, Vite).
+Since models are meant for web games on mobile browsers performance is important. Models will be used to build entire fantasy worlds and they need to be optimized for that.
 
-## Commands
-- `npm run dev` – viewer (only way to verify texture baking/WebGL behaviour)
-- `npm test` – `node --test test/*.test.ts`
-- `npm run typecheck` – `tsc --noEmit`
-- `npm run build`
+We are aiming for a hand drawn style and detail level similar to games like genshin impact.
 
-Run typecheck and tests before finishing a change.
+All models should have some randomness on generation, they should change dimensions, shape, colors and textures. Given a seed the same models should always be created.
 
-## Guidelines
-- Keep seeds stable: don't add or remove `this.random()` draws in a model (use `this.skip(n)`), so a seed keeps producing identical shapes. Texture picks use WorldModel's separate PRNG.
-- Without WebGL (Node/tests) materials are plain colours with no map/UVs.
-- Thin cloth/sheet geometry must be wrapped with `withBackFaces()` (`src/models/terrain.ts`); MergeBuilder negative scale doesn't flip normals.
-- Forest tier cross-fades must use the same distance metric in CPU (`src/forest/fade.js`) and all shaders.
-- Toon shading patches three ShaderChunks via whitespace-tolerant regex; `setToonShading` must run before first compile.
-- Build models from simple three.js geometries; register new models in `src/registry.ts`.
-- Keep changes small and focused; add tests in `test/` for new behaviour; comment only non-obvious code.
+Also focus on writing human readable code with descriptive variable and function names and comments describing how and why things are implemented in a certain way.
