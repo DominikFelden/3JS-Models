@@ -301,9 +301,15 @@ test('LeafTree builds leaves that hang and face up/outward', () => {
 
 import { models } from '../src/registry.ts';
 
-test('registry is sorted alphabetically and every model builds with a collider and finite bounds', () => {
+test('registry is grouped by category, sorted alphabetically, starts with Stylized-Tree and every model builds with a collider and finite bounds', () => {
   const names = models.map((m) => m.name);
-  assert.deepStrictEqual(names, [...names].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true })));
+  assert.strictEqual(names[0], 'Stylized-Tree');
+  assert.deepStrictEqual(models.map((m) => m.category), [...models.map((m) => m.category)].sort().reverse());
+  for (const category of ['Nature', 'Human-Structures']) {
+    const group = models.filter((m) => m.category === category).map((m) => m.name).filter((n) => n !== 'Stylized-Tree');
+    assert.ok(group.length > 0, category);
+    assert.deepStrictEqual(group, [...group].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true })));
+  }
   for (const m of models.filter((x) => x.name !== 'SimpleTree')) {
     const model = m.create({ complexity: 1 });
     assert.ok(model.getColliders().length > 0, m.name);

@@ -279,7 +279,17 @@ function fillSelect() {
   const q = search.value.trim().toLowerCase();
   const previous = select.value;
   select.replaceChildren();
-  models.forEach((m, i) => { if (m.name.toLowerCase().includes(q)) select.add(new Option(m.name, String(i))); });
+  const groups = new Map();
+  models.forEach((m, i) => {
+    if (!m.name.toLowerCase().includes(q)) return;
+    if (!groups.has(m.category)) {
+      const group = document.createElement('optgroup');
+      group.label = m.category;
+      groups.set(m.category, group);
+      select.appendChild(group);
+    }
+    groups.get(m.category).appendChild(new Option(m.name, String(i)));
+  });
   noMatch.style.display = select.options.length ? 'none' : '';
   if ([...select.options].some((o) => o.value === previous)) select.value = previous;
   return select.value !== previous && select.options.length > 0;
