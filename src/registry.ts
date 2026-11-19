@@ -1,6 +1,6 @@
 import { Box3, Vector3 } from 'three';
 import {
-  SimpleTree, PineTree, OakTree, Bush, Rock, House, Castle, LeafTree, StylizedTree, Forest,
+  SimpleTree, PineTree, OakTree, Bush, Fern, Bracken, TallGrass, Hosta, Rock, House, Castle, LeafTree, StylizedTree, Forest,
   MAX_STYLIZED_COMPLEXITY, STYLIZED_FOREST_LEVELS,
   MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY,
   Wall, Door, Window, GlassDoor, Column, Roof, Chimney, Stairs, Railing, Balcony, Grass, BirdsNest, Flower,
@@ -17,6 +17,8 @@ const TREE_PARAMS = [
   { key: 'leafColor', label: 'Leaf colour', type: 'color', value: null, fallback: '#4a9a2a' },
 ];
 /** Stylized-Tree: does the trunk continue through the crown? `auto` = from the seed (half of them). */
+/** Leaf controls of bushes and ground plants. */
+const LEAF_PARAMS = TREE_PARAMS.filter((p) => p.key === 'leafSize' || p.key === 'leafColor');
 const LEADER_PARAM = { key: 'leader', label: 'Trunk', type: 'select', value: 'auto', options: [['auto', 'Auto (seed)'], ['on', 'Continues'], ['off', 'Splits']] };
 const LEAF_TYPE_PARAM = {
   key: 'leafType', label: 'Leaf type', type: 'select', value: 'oak',
@@ -35,9 +37,11 @@ const LEAF_TYPE_PARAM = {
  * (`seed` is undefined for a fresh random model, or a number to rebuild one.)
  */
 const ON_OFF = (key, label) => ({ key, label, type: 'select', value: 'on', options: [['on', 'On'], ['off', 'Off']] });
-const FOREST_PARAMS = (count, area) => [
+const FOREST_PARAMS = (count, area, plants) => [
   { key: 'treeType', label: 'Tree type', type: 'select', value: 'stylized', options: [['stylized', 'Stylized (cards)'], ['leaf', 'Leaf-Tree']] },
   { key: 'count', label: 'Trees', type: 'range', min: 50, max: 60000, step: 50, value: count },
+  { key: 'plants', label: 'Plants (ferns, bushes, ...)', type: 'range', min: 0, max: 100000, step: 500, value: plants },
+  { key: 'plantDistance', label: 'Plant range', type: 'range', min: 10, max: 200, step: 5, value: 60 },
   { key: 'area', label: 'Area (side)', type: 'range', min: 40, max: 1500, step: 10, value: area },
   { key: 'sizeVariety', label: 'Size variety', type: 'range', min: 0, max: 1.5, step: 0.1, value: 1 },
   { key: 'treeDistance', label: '3D tree range', type: 'range', min: 10, max: 100, step: 5, value: 25 },
@@ -57,7 +61,7 @@ function forest(o) {
     complexity: o.treeType === 'leaf' ? null : o.complexity, // the slider covers the stylized trees; leaf trees keep their levels
     lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
     impostorDistance: o.treeDistance, canopyDistance: o.impostorDistance,
-    shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
+    plants: o.plants, plantDistance: o.plantDistance, shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
   });
   (f as any).autoDetail = o.autoDetail !== 'off';
   return f;
@@ -69,16 +73,20 @@ const unsorted = [
   { name: 'OakTree', complexity: { max: MAX_TREE_COMPLEXITY, value: 2 }, params: TREE_PARAMS, create: (o) => new OakTree(o) },
   { name: 'Leaf-Tree', complexity: { max: MAX_TREE_COMPLEXITY, value: 4 }, params: [LEAF_TYPE_PARAM, ...TREE_PARAMS], create: (o) => new LeafTree(o) },
   { name: 'Stylized-Tree', complexity: { max: MAX_STYLIZED_COMPLEXITY, value: 2 }, params: [...TREE_PARAMS, LEADER_PARAM], create: (o) => new StylizedTree({ ...o, leader: { on: true, off: false }[o.leader] }) },
-  { name: 'Forest', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(1000, 160), fog: [150, 1400], create: forest },
+  { name: 'Forest', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(1000, 160, 3000), fog: [150, 1400], create: forest },
   {
-    name: 'Forest (fly-over)', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(30000, 1000), fog: [200, 1600],
+    name: 'Forest (fly-over)', complexity: FOREST_COMPLEXITY, params: FOREST_PARAMS(30000, 1000, 30000), fog: [200, 1600],
     create: (o) => {
       const f = forest(o);
       f.viewBox = new Box3(new Vector3(-120, 0, -120), new Vector3(120, 60, 120)); // start high above the trees
       return f;
     },
   },
-  { name: 'Bush', create: (o) => new Bush(o) },
+  { name: 'Bush', params: LEAF_PARAMS, create: (o) => new Bush(o) },
+  { name: 'Fern', params: LEAF_PARAMS, create: (o) => new Fern(o) },
+  { name: 'Bracken', params: LEAF_PARAMS, create: (o) => new Bracken(o) },
+  { name: 'Tall Grass', params: LEAF_PARAMS, create: (o) => new TallGrass(o) },
+  { name: 'Hosta', params: LEAF_PARAMS, create: (o) => new Hosta(o) },
   { name: 'Rock', create: (o) => new Rock(base(o)) },
   { name: 'House (cottage)', create: (o) => new House({ ...base(o), type: 'cottage' }) },
   { name: 'House (longhouse)', create: (o) => new House({ ...base(o), type: 'longhouse' }) },

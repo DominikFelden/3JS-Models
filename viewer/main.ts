@@ -312,7 +312,7 @@ function showStats(fps) {
   statsBox.style.display = st ? 'block' : 'none';
   if (!st) return;
   const { calls, triangles } = renderer.info.render;
-  statsBox.textContent = `${fps} fps\n3D trees ${st.visible}/${st.trees}\nLOD ${st.levels.join(' / ')}\nimpostors ${st.impostors}\ncanopy ${st.canopy ? 'on' : 'off'}\ndetail ${Math.round(st.detail * 100)}%\ndraw calls ${calls}\ntriangles ${(triangles / 1000).toFixed(0)}k`;
+  statsBox.textContent = `${fps} fps\n3D trees ${st.visible}/${st.trees}\nplants ${st.plants}\nLOD ${st.levels.join(' / ')}\nimpostors ${st.impostors}\ncanopy ${st.canopy ? 'on' : 'off'}\ndetail ${Math.round(st.detail * 100)}%\ndraw calls ${calls}\ntriangles ${(triangles / 1000).toFixed(0)}k`;
 }
 
 /** Paint the shared texture pool with the viewer's own renderer (with progress), then show the first model. */

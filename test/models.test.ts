@@ -678,3 +678,27 @@ test('Forest complexity picks the 3D tree levels; sizeVariety spreads the varian
   assert.ok(Math.min(...scales) >= 0.7 && Math.max(...scales) <= 1.35 && spread(scales) > 1.6);
   f.dispose();
 });
+
+import { Fern, Bracken, TallGrass, Hosta } from '../src/index.ts';
+
+test('frond plants build with a collider and are deterministic per seed', () => {
+  for (const Plant of [Fern, Bracken, TallGrass, Hosta]) {
+    const a = new Plant({ seed: 7 });
+    const b = new Plant({ seed: 7 });
+    assert.strictEqual(a.getColliders().length, 1);
+    assert.deepStrictEqual(a.getBounds(), b.getBounds());
+    assert.notDeepStrictEqual(a.getBounds(), new Plant({ seed: 8 }).getBounds());
+  }
+});
+
+test('Forest scatters undergrowth between trees without moving them', () => {
+  const opts = { seed: 6, count: 100, area: 60, variants: 2 };
+  const withPlants = new Forest({ ...opts, plants: 400 });
+  assert.deepStrictEqual(withPlants.getPlacements(), new Forest(opts).getPlacements());
+  const cam = new PerspectiveCamera(50, 1.5, 0.1, 1000);
+  cam.position.set(0, 3, 20);
+  cam.lookAt(0, 0, 0);
+  withPlants.update(cam);
+  assert.ok(withPlants.stats.plants > 0, 'plants near the camera are drawn');
+  withPlants.dispose();
+});

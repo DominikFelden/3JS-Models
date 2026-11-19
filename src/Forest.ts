@@ -9,6 +9,7 @@ import { fallbackColor } from './textures/recipes.ts';
 import { fadeMaterial, rangeUniform, setRange, inRange } from './forest/fade.ts';
 import { bakeImpostors, createImpostors } from './forest/impostors.ts';
 import { canopyGeometry, createCanopy } from './forest/canopy.ts';
+import { Undergrowth } from './forest/undergrowth.ts';
 
 /**
  * Detail levels of the real (3D) forest trees. Level 0 is used close to the
@@ -114,6 +115,9 @@ function boxDistances(b, p) {
  *  - minScale, maxScale: random tree size range (default 0.7 .. 1.35, medium sizes most common)
  *  - sizeVariety: how much the variants differ in trunk height and thickness (default 1, 0 = as the seeds make them):
  *    the variants are spread over tall and slender, short and stout trees, so the forest is no plantation
+ *  - plants: number of ground plants between the trees (default 0): ferns, bracken, tall grass, broadleaf plants and bushes, see
+ *    `Undergrowth`. They are drawn only within `plantDistance` (default 60, scaled by `detail`) and cost no CPU far from the camera.
+ *    Options: plantVariants (seeds per kind, default 3), plantShadows (default false), plantOptions (passed to every plant)
  *  - renderer: your WebGLRenderer, used to bake the impostors (otherwise a temporary one is used)
  *
  * Without WebGL (Node) nothing is baked: impostors have no pictures, the rest
@@ -153,6 +157,7 @@ export class Forest extends WorldModel {
   declare lod: any;
   declare lodDistances: any;
   declare treeType: any;
+  declare undergrowth: Undergrowth | null;
   declare levels: any;
   declare maxDistance: any;
   declare random: any;
@@ -165,7 +170,7 @@ export class Forest extends WorldModel {
       count = 1000, area = 160, variants = 6, treeType = 'leaf', complexity = null, levels: levelsOption = null, lodDistances = [12], lod = true,
       impostors = true, impostorDistance = 25, impostorResolution = 128, canopy = true, canopyDistance = 600,
       maxDistance = Infinity, fade = 0.12, detail = 1, chunkSize = 32,
-      shadows = true, treeOptions = {}, heightAt = null, minScale = 0.7, maxScale = 1.35, sizeVariety = 1, renderer = null,
+      shadows = true, treeOptions = {}, plants = 0, plantDistance = 60, plantVariants = 3, plantShadows = false, plantOptions = {}, heightAt = null, minScale = 0.7, maxScale = 1.35, sizeVariety = 1, renderer = null,
     } = options;
     this.count = WorldModel.clampInt(count, 0, 200000, 1000);
     this.treeType = FOREST_TREE_TYPES[treeType] ? treeType : 'leaf';
@@ -345,11 +350,21 @@ export class Forest extends WorldModel {
     this.add(this.canopyMesh);
     this._canopyTriangles = trianglesOf(this.canopyMesh);
 
+    // Ground plants: their own random stream, so a seed builds the same trees with or without them.
+    this.undergrowth = null;
+    if (plants > 0) {
+      this.undergrowth = new Undergrowth({
+        count: plants, area, seed: this.seed ^ 0x91a47, variants: plantVariants, distance: plantDistance, fade, shadows: plantShadows,
+        heightAt, avoid: this._trees, plantOptions,
+      });
+      this.add(this.undergrowth);
+    }
+
     this.bounds = new Box3(new Vector3(-area / 2, 0, -area / 2), new Vector3(area / 2, 12, area / 2));
     this.viewBox = new Box3(new Vector3(-30, 0, -30), new Vector3(30, 12, 30)); // a good first camera view
     this.addShape('box', { size: [area, 1, area] }, [0, 0.5, 0], null, 'forest');
     this.stats = {
-      trees: this.count, visible: 0, levels: levels.map(() => 0), impostors: 0, canopy: false, triangles: 0, drawCalls: 0, detail: this._detail, chunks: 0,
+      trees: this.count, plants: 0, visible: 0, levels: levels.map(() => 0), impostors: 0, canopy: false, triangles: 0, drawCalls: 0, detail: this._detail, chunks: 0,
     };
     this._seen = new Float64Array(48);
     this._levelCount = levels.length;
@@ -492,6 +507,12 @@ export class Forest extends WorldModel {
         }
       }
     }
+    if (this.undergrowth) {
+      this.undergrowth.update(_cam, k, _frustum, this._detail);
+      this.stats.plants = this.undergrowth.stats.visible;
+      triangles += this.undergrowth.stats.triangles;
+      drawCalls += this.undergrowth.stats.drawCalls;
+    }
     const [fNear, fFar] = boxDistances(this._forestBox, _cam);
     const inView = _frustum.intersectsBox(this._forestBox);
     this.impostorMesh.visible = !!imp && inView && impostors > 0;
@@ -506,6 +527,7 @@ export class Forest extends WorldModel {
     (this.children as any[]).filter((o) => o.isInstancedMesh).forEach((m) => m.dispose());
     this._fadeMaterials.forEach((m) => m.dispose());
     this._fadeMaterials.clear();
+    this.undergrowth?.dispose();
     this.impostorMesh.material.dispose();
     this.canopyMesh.material.dispose();
     this.impostorAtlas?.color.dispose();
