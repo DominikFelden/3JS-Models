@@ -260,9 +260,8 @@ export class Forest extends WorldModel {
           mesh.instanceMatrix.setUsage(DynamicDrawUsage);
           mesh.count = 0;
           mesh.frustumCulled = false; // instances are culled one by one in update()
-          mesh.castShadow = shadows && l === 0;
-          if (src.customDepthMaterial) mesh.customDepthMaterial = src.customDepthMaterial; // billboarded leaf cards
-          mesh.receiveShadow = true;
+          mesh.castShadow = shadows && l === 0 && src.castShadow;
+          mesh.receiveShadow = src.receiveShadow;
           if (l === 0) { src.geometry.computeBoundingBox(); box.union(src.geometry.boundingBox); }
           return mesh;
         });

@@ -1,8 +1,8 @@
-import { Mesh, Vector3, Color } from 'three';
-import { WorldModel } from '../WorldModel.ts';
+import { Mesh, Vector3, Color, IcosahedronGeometry, MeshBasicMaterial } from 'three';
+import { WorldModel, shared } from '../WorldModel.ts';
 import { treeStyle } from './branching.ts';
 import { textureMean } from '../textures/pool.ts';
-import { PLANT_PICTURES, frondGeometry, plantMaterial, plantDepthMaterial, type Frond } from './plantCards.ts';
+import { PLANT_PICTURES, frondGeometry, plantMaterial, type Frond } from './plantCards.ts';
 
 /**
  * Ground plants for forest floors and meadows, drawn with the same hand-inked, alpha-cut
@@ -73,9 +73,16 @@ class FrondPlant extends WorldModel {
     const geo = frondGeometry(fronds);
     this._ownedGeometries.push(geo);
     const mesh = new Mesh(geo, plantMaterial(leafColor));
-    mesh.customDepthMaterial = plantDepthMaterial();
-    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.castShadow = mesh.receiveShadow = false;
     this.add(mesh);
+    // The fronds cast no shadow themselves: an invisible, low-poly ellipsoid casts one simple shadow for the whole plant.
+    const shadowGeo = new IcosahedronGeometry(1, 0);
+    shadowGeo.scale(this.radius, this.plantHeight / 2, this.radius);
+    shadowGeo.translate(0, this.plantHeight / 2, 0);
+    this._ownedGeometries.push(shadowGeo);
+    const shadowCaster = new Mesh(shadowGeo, shared('plant:shadow', () => new MeshBasicMaterial({ colorWrite: false, depthWrite: false })));
+    shadowCaster.castShadow = true;
+    this.add(shadowCaster);
     this.addShape('cylinder', { radius: this.radius, height: this.plantHeight }, [0, this.plantHeight / 2, 0], null, 'plant');
   }
 }

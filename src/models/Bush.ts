@@ -2,7 +2,7 @@ import { IcosahedronGeometry, Mesh, Vector3, Color } from 'three';
 import { WorldModel, MergeBuilder, shared, material, mulberry32 } from '../WorldModel.ts';
 import { treeStyle } from './branching.ts';
 import { pooledMaterial, textureMean } from '../textures/pool.ts';
-import { leafCardMaterial, leafCardDepthMaterial, leafCardGeometry, CARD_GRID } from './leafCards.ts';
+import { leafCardMaterial, leafCardGeometry, CARD_GRID } from './leafCards.ts';
 
 /** Mean size of a leaf card of a bush (world units, times `leafSize`): smaller than a tree's, a bush is small. */
 const BUSH_CARD_SIZE = 0.3;
@@ -99,8 +99,8 @@ export class Bush extends WorldModel {
     const geo = leafCardGeometry(cards);
     this._ownedGeometries.push(geo);
     const mesh = new Mesh(geo, leafCardMaterial(leafColor));
-    mesh.customDepthMaterial = leafCardDepthMaterial();
-    mesh.castShadow = mesh.receiveShadow = true;
+    // Cards neither cast nor receive shadows: the opaque foliage cores cast the bush's shadow.
+    mesh.castShadow = mesh.receiveShadow = false;
     this.add(mesh);
     this.addShape('sphere', { radius: Math.max(radii.x, radii.z) }, [0, center.y, 0]);
   }
