@@ -55,7 +55,9 @@ export class Bush extends WorldModel {
       const size = i === 0 ? this.rand(0.62, 0.72) : this.rand(0.45, 0.6);
       const r = new Vector3(radii.x * size, radii.y * size * this.rand(0.85, 1.1), radii.z * size);
       const at = new Vector3(Math.cos(a) * spread * radii.x, this.rand(-0.25, 0.2) * radii.y, Math.sin(a) * spread * radii.z).add(center);
-      at.y = Math.max(at.y, r.y * 0.3); // clumps sink into the ground instead of hovering above it
+      // The central clump's centre sits exactly 0.4 radii above the ground, so its core (0.6 radii)
+      // is partly buried and always touches the ground; the others are never lower than that.
+      at.y = i === 0 ? r.y * 0.4 : Math.max(at.y, r.y * 0.4);
       const n = Math.max(8, Math.ceil(COVER * (SHELL * (r.x + r.y + r.z) / 3 / cardSize) ** 2));
       const k = 0.55 + this.rand(0, 0.15) + 0.2 * (at.y / (radii.y * 2));
       b.add(blob, core, { position: at.toArray(), scale: r.clone().multiplyScalar(CORE).toArray(), yaw: a, tint: [k * this.rand(0.95, 1.08), k, k * this.rand(0.9, 1)] });
