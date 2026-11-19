@@ -576,7 +576,7 @@ test('Forest of stylized trees: same tiers, far fewer triangles than leaf trees'
   assert.ok(s.stats.triangles * 10 < l.stats.triangles, `${s.stats.triangles} vs ${l.stats.triangles}`);
   assert.ok(Number.isInteger(s.textureVariants().canopy));
   const cards = s.children.filter((m: any) => m.isInstancedMesh && m.geometry.attributes.cardCenter);
-  assert.ok(cards.length > 0 && cards.every((m: any) => m.customDepthMaterial), 'card shadows face the light');
+  assert.ok(cards.length > 0 && cards.every((m: any) => !m.castShadow && !m.receiveShadow), 'cards carry no shadows');
   assert.strictEqual(new Forest({ ...opts, count: 10, treeType: 'nope' }).treeType, 'leaf');
   s.dispose();
   l.dispose();

@@ -122,9 +122,8 @@ export class Undergrowth extends Group {
         mesh.instanceMatrix.setUsage(DynamicDrawUsage);
         mesh.count = 0;
         mesh.frustumCulled = false; // instances are culled one by one in update()
-        mesh.castShadow = shadows;
-        if (src.customDepthMaterial) mesh.customDepthMaterial = src.customDepthMaterial;
-        mesh.receiveShadow = true;
+        mesh.castShadow = shadows && src.castShadow;
+        mesh.receiveShadow = src.receiveShadow;
         src.geometry.computeBoundingBox();
         box.union(src.geometry.boundingBox);
         if (perVariant[v] > 0) this.add(mesh);

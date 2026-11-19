@@ -2,7 +2,7 @@ import { CylinderGeometry, IcosahedronGeometry, Mesh, Quaternion, Vector3, Color
 import { WorldModel, MergeBuilder, shared, mulberry32 } from '../WorldModel.ts';
 import { treeStyle, lsystem, runTurtle } from './branching.ts';
 import { pooledMaterial, textureMean } from '../textures/pool.ts';
-import { leafCardMaterial, leafCardDepthMaterial, leafCardGeometry, CARD_GRID } from './leafCards.ts';
+import { leafCardMaterial, leafCardGeometry, CARD_GRID } from './leafCards.ts';
 
 /** Highest StylizedTree complexity. */
 export const MAX_STYLIZED_COMPLEXITY = 10;
@@ -285,8 +285,8 @@ export class StylizedTree extends WorldModel {
       const geo = leafCardGeometry(cards);
       this._ownedGeometries.push(geo);
       const mesh = new Mesh(geo, leafCardMaterial(leafColor));
-      mesh.customDepthMaterial = leafCardDepthMaterial();
-      mesh.castShadow = mesh.receiveShadow = true;
+      // Cards neither cast nor receive shadows: the opaque foliage cores cast the crown's shadow.
+      mesh.castShadow = mesh.receiveShadow = false;
       this.add(mesh);
     }
     this.addShape('sphere', { radius: Math.max(radii.x, radii.y, radii.z) }, C.toArray(), null, 'crown');
