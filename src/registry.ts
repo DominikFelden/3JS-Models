@@ -26,7 +26,7 @@ const LEAF_TYPE_PARAM = {
 };
 
 /**
- * Models listed in the viewer menu (sorted alphabetically automatically). Add new models here.
+ * Models listed in the viewer menu (grouped into categories, then sorted alphabetically automatically). Add new models here.
  * `create(opts)` receives `{ complexity, seed, textures }` from the viewer (`textures` pins
  * texture variants, `{kind: 0..4}`; pass it on to the model).
  * `complexity: { max, value }` makes the viewer show a complexity slider.
@@ -158,5 +158,22 @@ const unsorted = [
   { name: 'Ship', create: (o) => new Ship(base(o)) },
 ];
 
+/** Viewer menu groups; every model not listed here is a human-made structure or prop. */
+const NATURE_MODELS = new Set([
+  'SimpleTree', 'PineTree', 'OakTree', 'Leaf-Tree', 'Stylized-Tree', 'Forest', 'Forest (fly-over)',
+  'Bush', 'Fern', 'Bracken', 'Tall Grass', 'Hosta', 'Rock', "Bird's nest", 'Flower', 'Grass',
+  'Mountain', 'Hill', 'Cliff', 'Cave Entrance', 'Pond', 'Waterfall', 'Crystal', 'Ice Spire',
+  'Mushroom', 'Giant Mushroom', 'Cactus', 'Palm Tree', 'Stump', 'Log', 'Reeds', 'Pumpkin',
+]);
+export const CATEGORIES = ['Nature', 'Human-Structures'];
+/** The model the viewer shows on start: listed first in its category. */
+const FIRST_MODEL = 'Stylized-Tree';
+
 const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base', numeric: true });
-export const models = unsorted.sort(byName);
+const byCategoryThenName = (a, b) =>
+  CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category)
+  || (b.name === FIRST_MODEL ? 1 : 0) - (a.name === FIRST_MODEL ? 1 : 0)
+  || byName(a, b);
+export const models = unsorted
+  .map((m) => ({ ...m, category: NATURE_MODELS.has(m.name) ? CATEGORIES[0] : CATEGORIES[1] }))
+  .sort(byCategoryThenName);
