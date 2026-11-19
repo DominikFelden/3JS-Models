@@ -25,6 +25,8 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = PCFSoftShadowMap;
 renderer.toneMapping = ACESFilmicToneMapping;
 renderer.outputColorSpace = SRGBColorSpace;
+// The stats count a whole frame (shadow maps, outline pass, screen); three would restart them at every render() call.
+renderer.info.autoReset = false;
 const view = document.getElementById('view') as any;
 view.appendChild(renderer.domElement);
 const outlines = new ToonOutlines(renderer);
@@ -96,15 +98,21 @@ const pins = () => {
   return texturePins.get(name);
 };
 
+let lastBuildMs = 0;
+let pendingShow: ReturnType<typeof setTimeout> | undefined;
+
 /** (Re)build the selected model. `reframe` moves the camera to fit the new model. */
 function show(reframe) {
+  clearTimeout(pendingShow);
   const entry = models[Number(select.value)];
   if (current) {
     scene.remove(current);
     current.dispose?.(); // free this model's own geometries (shared ones stay)
   }
   // No seed given -> every build is a new random variation.
+  const started = performance.now();
   current = entry.create({ complexity: Number(slider.value), seed, textures: { ...pins() }, renderer, ...values() });
+  lastBuildMs = performance.now() - started;
   [(scene.fog as any).near, (scene.fog as any).far] = entry.fog ?? FOG;
   seed = current.seed; // later changes (sliders) modify this very model; Re-roll picks a new seed
   seedLabel.textContent = current.seed !== undefined ? `seed ${current.seed}` : '';
@@ -119,6 +127,16 @@ function show(reframe) {
   outlines.set({ fade: [Math.max(40, size * 2.5), Math.max(160, size * 8)] }); // big models keep their lines
   camera.position.copy(center).add(new Vector3(1, 0.6, 1).normalize().multiplyScalar(size * 1.4));
   controls.update();
+}
+
+/**
+ * Rebuild for controls that fire while being dragged (sliders). Quick models rebuild at once; slow
+ * ones (big forests take a few hundred ms) wait until the control rests for a moment, instead of
+ * stalling the page at every step of the drag.
+ */
+function showSoon() {
+  clearTimeout(pendingShow);
+  pendingShow = setTimeout(() => show(false), lastBuildMs > 30 ? 200 : 0);
 }
 
 /** One control for a parameter; all copies (modal + dock) of a key stay in sync via `data-key`. */
@@ -141,7 +159,7 @@ function makeControl(def) {
   if (def.type === 'range') out.textContent = Number(input.value).toFixed(2);
   input.addEventListener('input', () => {
     setParam(def.key, def.type === 'range' ? Number(input.value) : input.value);
-    show(false);
+    showSoon();
   });
   wrap.append(input, out);
   if (def.value === null) {
@@ -303,8 +321,8 @@ search.addEventListener('input', () => {
 search.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && select.options.length) { select.selectedIndex = 0; select.dispatchEvent(new Event('change')); }
 });
-// Rebuild live while dragging; keep the camera where the user put it.
-slider.addEventListener('input', () => { sliderValue.textContent = slider.value; show(false); });
+// Rebuild live while dragging (slow models once the slider rests); keep the camera where the user put it.
+slider.addEventListener('input', () => { sliderValue.textContent = slider.value; showSoon(); });
 rerollButton.addEventListener('click', randomize);
 configureSlider();
 renderParams();
@@ -336,6 +354,7 @@ async function start() {
   show(true);
   let frames = 0, since = performance.now(), fps = 0;
   renderer.setAnimationLoop(() => {
+    renderer.info.reset(); // count this frame's draw calls and triangles over all its render passes
     controls.update();
     current?.update?.(camera); // models with levels of detail (Forest) choose what to draw
     outlines.render(scene, camera);

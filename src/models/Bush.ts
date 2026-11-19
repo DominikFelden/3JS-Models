@@ -12,6 +12,10 @@ const CORE = 0.6;
 const SHELL = 0.85;
 /** Cards per (shell radius / card size)^2: enough clumped cards to hide the core from every side. */
 const COVER = 36;
+/** `lowPoly` bushes (seen from afar) have leaf cards this much bigger ... */
+const LOW_POLY_CARD_SIZE = 1.6;
+/** ... and this share of the cards it takes to hide the core with them. */
+const LOW_POLY_COVER = 0.75;
 
 /** Van der Corput sequence: spreads any number of cards evenly over the heights of a clump. */
 const vdc = (i) => { let v = 0, f = 0.5; for (; i > 0; i >>= 1, f /= 2) if (i & 1) v += f; return v; };
@@ -23,20 +27,29 @@ const vdc = (i) => { let v = 0, f = 0.5; for (; i > 0; i >>= 1, f /= 2) if (i & 
  * of the whole bush's ellipsoid, so it is lit as one soft volume. The seed picks the leaf shape
  * (oval, slender, round, pointed), the foliage texture (`textures: {foliage}` pins one), the
  * size, the number and spread of the clumps and whether it carries berries; with `leafSize` and
- * `leafColor` (as for trees) you tweak the leaves. A few hundred triangles, 2 draw calls
- * (blobs, cards) or 3 with berries. Collider: one sphere around the whole bush.
+ * `leafColor` (as for trees) you tweak the leaves. ~500-2100 triangles (about 1150 on average,
+ * mostly leaf cards), 2 draw calls (blobs, cards) or 3 with berries. Collider: one sphere around
+ * the whole bush.
+ *
+ * lowPoly: true gives a cheap copy of the same bush (same seed, same clumps, berries and collider)
+ * for distances where single leaves are a few pixels (forests cross-fade to it around 25 m): 20-sided
+ * blobs and berries, leaf cards 1.6x as big and 30% as many (each at the spot of one of the full
+ * bush's cards); ~150-600 triangles, 3.5-3.8x fewer.
  */
 export class Bush extends WorldModel {
   declare random: any;
   declare cardCount: number;
+  declare lowPoly: boolean;
   declare crown: { center: Vector3, radii: Vector3 };
   constructor(options: any = {}) {
     super('Bush', options);
+    this.lowPoly = !!options.lowPoly;
     const style = treeStyle(options);
     const foliage = this.variant('foliage');
     const core = pooledMaterial('foliage', foliage, { color: style.leafColor ?? null, flatShading: false, vertexColors: true, roughness: 1 });
     const leafColor = style.leafColor !== undefined ? new Color(style.leafColor) : textureMean('foliage', foliage);
-    const cardSize = BUSH_CARD_SIZE * (style.leafSize ?? 1);
+    const cardSize = BUSH_CARD_SIZE * (style.leafSize ?? 1) * (this.lowPoly ? LOW_POLY_CARD_SIZE : 1);
+    const cover = COVER * (this.lowPoly ? LOW_POLY_COVER : 1);
     // Leaf shape (atlas row) from its own stream, so it never moves the shapes drawn by `this.random`.
     const leafShape = Math.floor(mulberry32(this.seed ^ 0xb05e)() * CARD_GRID);
 
@@ -48,7 +61,7 @@ export class Bush extends WorldModel {
 
     const clumps: { center: Vector3, radii: Vector3, n: number }[] = [];
     const count = 3 + Math.floor(this.random() * 4);
-    const blob = shared('bush:blob', () => new IcosahedronGeometry(1, 1));
+    const blob = this.lowPoly ? shared('bush:blob0', () => new IcosahedronGeometry(1, 0)) : shared('bush:blob', () => new IcosahedronGeometry(1, 1));
     const b = new MergeBuilder();
     for (let i = 0; i < count; i++) {
       const a = this.rand(0, Math.PI * 2), spread = i === 0 ? 0 : this.rand(0.35, 0.6);
@@ -58,7 +71,7 @@ export class Bush extends WorldModel {
       // The central clump's centre sits exactly 0.4 radii above the ground, so its core (0.6 radii)
       // is partly buried and always touches the ground; the others are never lower than that.
       at.y = i === 0 ? r.y * 0.4 : Math.max(at.y, r.y * 0.4);
-      const n = Math.max(8, Math.ceil(COVER * (SHELL * (r.x + r.y + r.z) / 3 / cardSize) ** 2));
+      const n = Math.max(8, Math.ceil(cover * (SHELL * (r.x + r.y + r.z) / 3 / cardSize) ** 2));
       const k = 0.55 + this.rand(0, 0.15) + 0.2 * (at.y / (radii.y * 2));
       b.add(blob, core, { position: at.toArray(), scale: r.clone().multiplyScalar(CORE).toArray(), yaw: a, tint: [k * this.rand(0.95, 1.08), k, k * this.rand(0.9, 1)] });
       clumps.push({ center: at, radii: r, n });

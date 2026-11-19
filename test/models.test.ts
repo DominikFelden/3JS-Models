@@ -697,6 +697,22 @@ test('frond plants build with a collider and are deterministic per seed', () => 
   }
 });
 
+test('Bush lowPoly: the same bush (clumps, berries, collider) with bigger, fewer leaf cards for far away', () => {
+  const cardSize = (t) => { const c = cardMesh(t).geometry.attributes.cardCorner; let s = 0; for (let i = 0; i < c.count; i++) s += Math.hypot(c.getX(i), c.getY(i)); return s / c.count; };
+  const centres = (t) => { const a = cardMesh(t).geometry.attributes.cardCenter; const s = new Set(); for (let i = 0; i < a.count; i += 4) s.add(`${a.getX(i)},${a.getY(i)},${a.getZ(i)}`); return s; };
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const full = new Bush({ seed }), low = new Bush({ seed, lowPoly: true });
+    assert.deepStrictEqual(low.crown, full.crown);
+    assert.deepStrictEqual(low.getColliders(), full.getColliders());
+    assert.strictEqual(low.children.length, full.children.length, 'same draw calls (berries too)');
+    assert.ok(triangles(low) * 3 < triangles(full), `${triangles(low)} vs ${triangles(full)} triangles`);
+    assert.ok(cardSize(low) > cardSize(full) * 1.4, 'bigger leaf cards');
+    const all = centres(full);
+    assert.ok([...centres(low)].every((c) => all.has(c)), 'its cards sit where cards of the full bush sit');
+    assert.deepStrictEqual(new Bush({ seed, lowPoly: true }).getBounds(), low.getBounds(), 'deterministic');
+  }
+});
+
 test('Forest scatters undergrowth between trees without moving them', () => {
   const opts = { seed: 6, count: 100, area: 60, variants: 2 };
   const withPlants = new Forest({ ...opts, plants: 400 });

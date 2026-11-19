@@ -1,4 +1,4 @@
-import { InstancedMesh, Matrix4, Quaternion, Vector3, Box3, Frustum, DynamicDrawUsage, Color } from 'three';
+import { Matrix4, Vector3, Box3, Frustum, Color } from 'three';
 import { WorldModel } from './WorldModel.ts';
 import { LeafTree } from './models/LeafTree.ts';
 import { StylizedTree, MAX_STYLIZED_COMPLEXITY } from './models/StylizedTree.ts';
@@ -6,7 +6,8 @@ import { MAX_TREE_COMPLEXITY } from './models/branching.ts';
 import { canBake } from './textures/bake.ts';
 import { TEXTURE_VARIANTS } from './textures/pool.ts';
 import { fallbackColor } from './textures/recipes.ts';
-import { fadeMaterial, rangeUniform, setRange, inRange } from './forest/fade.ts';
+import { fadeMaterial, rangeUniform, rangeBand, setRange } from './forest/fade.ts';
+import { InstanceBuffer, START_CAPACITY } from './forest/instances.ts';
 import { bakeImpostors, createImpostors } from './forest/impostors.ts';
 import { canopyGeometry, createCanopy } from './forest/canopy.ts';
 import { Undergrowth } from './forest/undergrowth.ts';
@@ -47,16 +48,12 @@ const hash01 = (n) => {
   return ((h ^ (h >>> 16)) >>> 0) / 0x100000000;
 };
 
-const _m = new Matrix4();
 const _inv = new Matrix4();
-const _q = new Quaternion();
 const _p = new Vector3();
-const _s = new Vector3();
 const _c = new Vector3();
 const _cam = new Vector3();
 const _frustum = new Frustum();
 const _pv = new Matrix4();
-const _yAxis = new Vector3(0, 1, 0);
 const _sphere: any = { center: new Vector3(), radius: 0 };
 
 /** Triangular distribution on [0, 1] from one uniform draw: middle sizes common, extremes rare. */
@@ -64,12 +61,23 @@ const triangular = (u) => (u < 0.5 ? Math.sqrt(2 * u) / 2 : 1 - Math.sqrt(2 * (1
 
 const trianglesOf = (mesh) => (mesh.geometry.index ? mesh.geometry.index.count : mesh.geometry.attributes.position.count) / 3;
 
-/** Shortest and longest distance from point `p` to box `b`. */
+const _dist = { near: 0, far: 0 };
+/**
+ * Shortest (`near`) and longest (`far`) distance from point `p` to box `b`, in a reused object:
+ * called for every chunk of the forest each frame, so it allocates nothing. Same arithmetic as
+ * the tree distances in `update()`, so a tree in the box is never nearer than `near` or farther
+ * than `far`, not even by a rounding error.
+ */
 function boxDistances(b, p) {
   const dx = Math.max(b.min.x - p.x, 0, p.x - b.max.x), dy = Math.max(b.min.y - p.y, 0, p.y - b.max.y), dz = Math.max(b.min.z - p.z, 0, p.z - b.max.z);
   const fx = Math.max(Math.abs(p.x - b.min.x), Math.abs(p.x - b.max.x)), fy = Math.max(Math.abs(p.y - b.min.y), Math.abs(p.y - b.max.y)), fz = Math.max(Math.abs(p.z - b.min.z), Math.abs(p.z - b.max.z));
-  return [Math.hypot(dx, dy, dz), Math.hypot(fx, fy, fz)];
+  _dist.near = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  _dist.far = Math.sqrt(fx * fx + fy * fy + fz * fz);
+  return _dist;
 }
+
+/** Chunks with 3D trees nearest first: drawn front to back, the GPU skips the pixels hidden behind them. */
+const byNear = (a, b) => a.near - b.near;
 
 /**
  * A forest of `LeafTree`s (or `StylizedTree`s, see `treeType`) you can fly over: the illusion of a huge forest,
@@ -77,8 +85,9 @@ function boxDistances(b, p) {
  *
  * Tiers by distance from the camera (all distances in world units):
  *  1. 3D trees: a handful of tree VARIANTS (different seeds), each built at
- *     several `levels` of detail and drawn as `InstancedMesh`es. Only these
- *     cast shadows (the nearest level).                    0 .. impostorDistance
+ *     several `levels` of detail and drawn as `InstancedMesh`es (the meshes of
+ *     one variant and level share one small instance buffer, see
+ *     `InstanceBuffer`). Only these cast shadows (the nearest level). 0 .. impostorDistance
  *  2. Impostors: pictures of the variants taken from 8 x 4 directions (also
  *     from above), one camera-facing quad per tree, all trees in ONE draw
  *     call. Lit like the real trees (baked normals).       .. canopyDistance
@@ -116,7 +125,9 @@ function boxDistances(b, p) {
  *  - sizeVariety: how much the variants differ in trunk height and thickness (default 1, 0 = as the seeds make them):
  *    the variants are spread over tall and slender, short and stout trees, so the forest is no plantation
  *  - plants: number of ground plants between the trees (default 0): ferns, bracken, tall grass, broadleaf plants and bushes, see
- *    `Undergrowth`. They are drawn only within `plantDistance` (default 60, scaled by `detail`) and cost no CPU far from the camera.
+ *    `Undergrowth`. They are drawn only within `plantDistance` (default 60, scaled by `detail`; grass and broadleaf plants end at
+ *    70 %, ferns at 85 % of it) and cost no CPU far from the camera. Bushes turn into a cheaper copy of themselves (bigger, fewer
+ *    leaf cards) from `plantLodDistance` on (default 25, scaled by `detail`; Infinity keeps the full bushes).
  *    Options: plantVariants (seeds per kind, default 3), plantShadows (default false), plantOptions (passed to every plant)
  *  - renderer: your WebGLRenderer, used to bake the impostors (otherwise a temporary one is used)
  *
@@ -134,7 +145,10 @@ export class Forest extends WorldModel {
   declare _impostorsReady: any;
   declare _leafVariants: any;
   declare _levelCount: any;
+  declare _levelBands: { lo: number, hi: number }[];
   declare _levelRanges: any;
+  declare _impostorBand: { lo: number, hi: number };
+  declare _near3d: any[];
   declare _ownedGeometries: any;
   declare _seen: any;
   declare _shared: any;
@@ -170,7 +184,7 @@ export class Forest extends WorldModel {
       count = 1000, area = 160, variants = 6, treeType = 'leaf', complexity = null, levels: levelsOption = null, lodDistances = [12], lod = true,
       impostors = true, impostorDistance = 25, impostorResolution = 128, canopy = true, canopyDistance = 600,
       maxDistance = Infinity, fade = 0.12, detail = 1, chunkSize = 32,
-      shadows = true, treeOptions = {}, plants = 0, plantDistance = 60, plantVariants = 3, plantShadows = false, plantOptions = {}, heightAt = null, minScale = 0.7, maxScale = 1.35, sizeVariety = 1, renderer = null,
+      shadows = true, treeOptions = {}, plants = 0, plantDistance = 60, plantLodDistance = 25, plantVariants = 3, plantShadows = false, plantOptions = {}, heightAt = null, minScale = 0.7, maxScale = 1.35, sizeVariety = 1, renderer = null,
     } = options;
     this.count = WorldModel.clampInt(count, 0, 200000, 1000);
     this.treeType = FOREST_TREE_TYPES[treeType] ? treeType : 'leaf';
@@ -255,17 +269,13 @@ export class Forest extends WorldModel {
           this._leafVariants ??= [];
           this._leafVariants[v] = tree.textureVariants().leaf ?? tree.textureVariants().foliage;
         }
-        const meshes = srcMeshes.map((src) => {
-          const mesh = new InstancedMesh(src.geometry, fadeOf(src.material, l), perVariant[v]);
-          mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-          mesh.count = 0;
-          mesh.frustumCulled = false; // instances are culled one by one in update()
-          mesh.castShadow = shadows && l === 0 && src.castShadow;
-          mesh.receiveShadow = src.receiveShadow;
+        const buffer = new InstanceBuffer(Math.min(START_CAPACITY, perVariant[v]));
+        for (const src of srcMeshes) {
+          buffer.addMesh(src.geometry, fadeOf(src.material, l), { castShadow: shadows && l === 0 && src.castShadow, receiveShadow: src.receiveShadow });
           if (l === 0) { src.geometry.computeBoundingBox(); box.union(src.geometry.boundingBox); }
-          return mesh;
-        });
-        return { meshes, triangles: meshes.reduce((t, m) => t + trianglesOf(m), 0), slot: 0 };
+        }
+        const { meshes } = buffer;
+        return { buffer, meshes, triangles: meshes.reduce((t, m) => t + trianglesOf(m), 0) };
       });
       if (perVariant[v] > 0) lvls.forEach((lv) => lv.meshes.forEach((m) => this.add(m)));
       // Sphere around the tree, centred on the trunk axis, so it holds the tree whichever way it turns.
@@ -295,7 +305,7 @@ export class Forest extends WorldModel {
       const cx = Math.min(nc - 1, Math.max(0, Math.floor((t.x + area / 2) / chunk)));
       const cz = Math.min(nc - 1, Math.max(0, Math.floor((t.z + area / 2) / chunk)));
       const key = cz * nc + cx;
-      if (!chunkMap.has(key)) chunkMap.set(key, { trees: [], box: new Box3() });
+      if (!chunkMap.has(key)) chunkMap.set(key, { trees: [], box: new Box3(), near: 0, impostors: false });
       const ch = chunkMap.get(key);
       ch.trees.push(i);
       const tv = this._treeVariants[t.variant];
@@ -353,7 +363,7 @@ export class Forest extends WorldModel {
     this.undergrowth = null;
     if (plants > 0) {
       this.undergrowth = new Undergrowth({
-        count: plants, area, seed: this.seed ^ 0x91a47, variants: plantVariants, distance: plantDistance, fade, shadows: plantShadows,
+        count: plants, area, seed: this.seed ^ 0x91a47, variants: plantVariants, distance: plantDistance, lodDistance: plantLodDistance, fade, shadows: plantShadows,
         heightAt, avoid: this._trees, plantOptions,
       });
       this.add(this.undergrowth);
@@ -367,6 +377,9 @@ export class Forest extends WorldModel {
     };
     this._seen = new Float64Array(48);
     this._levelCount = levels.length;
+    this._levelBands = levels.map(() => ({ lo: 0, hi: 0 }));
+    this._impostorBand = { lo: 0, hi: 0 };
+    this._near3d = [];
     this.invalidate();
   }
 
@@ -456,37 +469,64 @@ export class Forest extends WorldModel {
     const imp = R.impostors && this._shared.range;
     const impLo = R.impostors ? R.impostors[0] * (1 - fade / 2) : 0;
     const impHi = R.impostors ? R.impostors[1] * (1 + fade / 2) : 0;
+    // The exact distance tests of the tiers (as `inRange`), read once as plain numbers.
+    const impBand = rangeBand(this._shared.range, this._impostorBand);
+    const levelBands = this._levelBands;
+    this._levelRanges.forEach((range, l) => rangeBand(range, levelBands[l]));
+    const used = R.levels.map((r) => !!r && r[1] > r[0] - 1e-9);
 
     const counts = this.stats.levels.fill(0);
     let visible = 0, triangles = 0, impostors = 0, chunks = 0;
-    for (const v of this._treeVariants) v.levels.forEach((lv) => { lv.slot = 0; });
-    const levelRanges = this._levelRanges;
-    const used = R.levels.map((r) => !!r && r[1] > r[0] - 1e-9);
 
+    // Pass 1, every chunk: impostors are only counted (they never change on the CPU); chunks with
+    // 3D trees are kept for pass 2.
+    const near3d = this._near3d;
+    near3d.length = 0;
     for (const ch of this._chunks) {
-      const [near, far] = boxDistances(ch.box, _cam);
+      const { near, far } = boxDistances(ch.box, _cam);
       const dNear = near * k, dFar = far * k;
       const has3d = dNear < reach3d;
-      const hasImp = imp && dNear < impHi && dFar >= impLo;
+      const hasImp = !!imp && dNear < impHi && dFar >= impLo;
       if (!has3d && !hasImp) continue;
       if (!_frustum.intersectsBox(ch.box)) continue;
       chunks++;
+      if (has3d) {
+        ch.near = dNear;
+        ch.impostors = hasImp;
+        near3d.push(ch);
+      } else if (dNear >= impBand.lo && dFar < impBand.hi) {
+        impostors += ch.trees.length; // the whole chunk is impostors: no need to look at single trees
+      } else {
+        for (const i of ch.trees) {
+          const t = this._trees[i];
+          const dx = t.x - _cam.x, dy = t.y - _cam.y, dz = t.z - _cam.z;
+          const d = k * Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (d >= impBand.lo && d < impBand.hi) impostors++;
+        }
+      }
+    }
+
+    // Pass 2, the few chunks near the camera, nearest first: pick the 3D trees and their levels.
+    near3d.sort(byNear);
+    for (const v of this._treeVariants) for (const lv of v.levels) lv.buffer.reset();
+    for (const ch of near3d) {
       for (const i of ch.trees) {
         const t = this._trees[i];
-        const d = k * Math.hypot(t.x - _cam.x, t.y - _cam.y, t.z - _cam.z);
-        if (hasImp && inRange(imp, d)) impostors++;
-        if (!has3d || d >= reach3d) continue;
+        const dx = t.x - _cam.x, dy = t.y - _cam.y, dz = t.z - _cam.z;
+        const d = k * Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (ch.impostors && d >= impBand.lo && d < impBand.hi) impostors++;
+        if (d >= reach3d) continue;
         const variant = this._treeVariants[t.variant];
         _sphere.center.set(t.x, t.y + variant.cy * t.scale, t.z);
         _sphere.radius = variant.radius * t.scale;
         if (!_frustum.intersectsSphere(_sphere)) continue;
+        // Every level whose band holds the tree draws it: two levels while it cross-fades.
         let drawn = false;
-        for (let l = 0; l < levelRanges.length; l++) {
-          if (!used[l] || !inRange(levelRanges[l], d)) continue;
+        for (let l = 0; l < levelBands.length; l++) {
+          const band = levelBands[l];
+          if (!used[l] || !(d >= band.lo && d < band.hi)) continue;
           const lv = variant.levels[l];
-          if (!drawn) _m.compose(_p.set(t.x, t.y, t.z), _q.setFromAxisAngle(_yAxis, t.yaw), _s.setScalar(t.scale));
-          for (const mesh of lv.meshes) mesh.setMatrixAt(lv.slot, _m);
-          lv.slot++;
+          lv.buffer.push(t.x, t.y, t.z, t.yaw, t.scale, _sphere.center.y, _sphere.radius);
           counts[l]++;
           triangles += lv.triangles;
           drawn = true;
@@ -496,23 +536,14 @@ export class Forest extends WorldModel {
     }
 
     let drawCalls = 0;
-    for (const v of this._treeVariants) {
-      for (const lv of v.levels) {
-        for (const mesh of lv.meshes) {
-          mesh.count = lv.slot;
-          mesh.visible = lv.slot > 0;
-          mesh.instanceMatrix.needsUpdate = true;
-          if (lv.slot > 0) drawCalls++;
-        }
-      }
-    }
+    for (const v of this._treeVariants) for (const lv of v.levels) drawCalls += lv.buffer.commit();
     if (this.undergrowth) {
       this.undergrowth.update(_cam, k, _frustum, this._detail);
       this.stats.plants = this.undergrowth.stats.visible;
       triangles += this.undergrowth.stats.triangles;
       drawCalls += this.undergrowth.stats.drawCalls;
     }
-    const [fNear, fFar] = boxDistances(this._forestBox, _cam);
+    const { near: fNear, far: fFar } = boxDistances(this._forestBox, _cam);
     const inView = _frustum.intersectsBox(this._forestBox);
     this.impostorMesh.visible = !!imp && inView && impostors > 0;
     if (this.impostorMesh.visible) { drawCalls++; triangles += impostors * 2; }

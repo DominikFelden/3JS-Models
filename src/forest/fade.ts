@@ -57,6 +57,17 @@ export function inRange(range, distance) {
   return distance >= x - y / 2 && distance < z + w / 2;
 }
 
+/**
+ * The distances `[lo, hi)` the tier with this range draws (exactly the test of
+ * `inRange`), read once so loops over many trees can compare plain numbers.
+ */
+export function rangeBand(range, band = { lo: 0, hi: 0 }) {
+  const { x, y, z, w } = range.value;
+  band.lo = x - y / 2;
+  band.hi = z + w / 2;
+  return band;
+}
+
 /** Inject the fade test into a material's fragment shader (`vForestDist` must be set by the vertex shader). */
 export function injectFadeFragment(shader, range) {
   shader.uniforms.uForestRange = range;

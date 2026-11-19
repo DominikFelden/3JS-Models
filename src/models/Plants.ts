@@ -7,11 +7,13 @@ import { PLANT_PICTURES, frondGeometry, plantMaterial, type Frond } from './plan
 /**
  * Ground plants for forest floors and meadows, drawn with the same hand-inked, alpha-cut
  * cards as the leaves of the stylized tree: a plant is a rosette of arching fronds (one
- * quad strip each) in ONE mesh and ONE draw call, ~20-70 triangles. Every model sits on y = 0,
+ * quad strip each, 8 triangles) in ONE mesh and ONE draw call, ~30-130 triangles. Every model sits on y = 0,
  * is centred on x/z and takes `seed`, `size`, `position`, `rotation`, `leafSize` and
  * `leafColor` (as trees do). The seed changes the number, length, width, lean and bend of the
  * fronds, the colour (picked from the foliage texture pool: `textures: {foliage}` pins one,
  * and each plant adds its own tint) and mirrors the fronds at random.
+ * The fronds cast no shadow: an invisible 20-triangle ellipsoid (`userData.shadowOnly`) casts one
+ * simple shadow for the whole plant.
  * Collider: one cylinder around the plant (tag 'plant').
  */
 
@@ -82,33 +84,34 @@ class FrondPlant extends WorldModel {
     this._ownedGeometries.push(shadowGeo);
     const shadowCaster = new Mesh(shadowGeo, shared('plant:shadow', () => new MeshBasicMaterial({ colorWrite: false, depthWrite: false })));
     shadowCaster.castShadow = true;
+    shadowCaster.userData.shadowOnly = true; // forests draw it into shadow maps only, or not at all without plant shadows
     this.add(shadowCaster);
     this.addShape('cylinder', { radius: this.radius, height: this.plantHeight }, [0, this.plantHeight / 2, 0], null, 'plant');
   }
 }
 
-/** Fern: 8-14 finely divided fronds arching out of a crown, the outer ones drooping. About 70 triangles. */
+/** Fern: 10-16 finely divided fronds arching out of a crown, the outer ones drooping. About 80-130 triangles. */
 export class Fern extends FrondPlant {
   constructor(options: any = {}) {
     super({ name: 'Fern', picture: PLANT_PICTURES.fern, fronds: [10, 16], length: [0.55, 0.95], aspect: [0.75, 1], pitch: [0.3, 1.2], droop: [0.5, 1.1], tint: [0.95, 1.05, 0.85], height: 0.7 }, options);
   }
 }
 
-/** Bracken: 4-7 tall, broad, triangular fronds on long stalks; taller and more upright than a fern. About 40 triangles. */
+/** Bracken: 4-7 tall, broad, triangular fronds on long stalks; taller and more upright than a fern. About 30-55 triangles. */
 export class Bracken extends FrondPlant {
   constructor(options: any = {}) {
     super({ name: 'Bracken', picture: PLANT_PICTURES.bracken, fronds: [4, 7], length: [0.9, 1.5], aspect: [0.8, 1.05], pitch: [0.15, 0.7], droop: [0.4, 0.9], tint: [0.9, 1, 0.8], height: 0.85 }, options);
   }
 }
 
-/** Tall grass: 5-9 long, slender blades fanning out of a tuft, bending over at the tips. About 40 triangles. */
+/** Tall grass: 5-9 long, slender blades fanning out of a tuft, bending over at the tips. About 40-70 triangles. */
 export class TallGrass extends FrondPlant {
   constructor(options: any = {}) {
     super({ name: 'TallGrass', picture: PLANT_PICTURES.grass, fronds: [5, 9], length: [0.5, 0.9], aspect: [0.55, 0.85], pitch: [0.1, 0.55], droop: [0.5, 1], tint: [1.08, 1.06, 0.8], height: 0.8 }, options);
   }
 }
 
-/** Broadleaf plant (hosta-like): 5-8 big ribbed oval leaves in a low, wide rosette. About 40 triangles. */
+/** Broadleaf plant (hosta-like): 5-8 big ribbed oval leaves in a low, wide rosette. About 40-65 triangles. */
 export class Hosta extends FrondPlant {
   constructor(options: any = {}) {
     super({ name: 'Hosta', picture: PLANT_PICTURES.broadleaf, fronds: [5, 8], length: [0.4, 0.65], aspect: [0.9, 1.2], pitch: [0.55, 1.2], droop: [0.3, 0.8], tint: [0.85, 1, 0.9], height: 0.6 }, options);
