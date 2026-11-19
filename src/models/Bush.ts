@@ -55,7 +55,7 @@ export class Bush extends WorldModel {
       const size = i === 0 ? this.rand(0.62, 0.72) : this.rand(0.45, 0.6);
       const r = new Vector3(radii.x * size, radii.y * size * this.rand(0.85, 1.1), radii.z * size);
       const at = new Vector3(Math.cos(a) * spread * radii.x, this.rand(-0.25, 0.2) * radii.y, Math.sin(a) * spread * radii.z).add(center);
-      at.y = Math.max(at.y, r.y * 0.55); // clumps never sink far into the ground
+      at.y = Math.max(at.y, r.y * 0.3); // clumps sink into the ground instead of hovering above it
       const n = Math.max(8, Math.ceil(COVER * (SHELL * (r.x + r.y + r.z) / 3 / cardSize) ** 2));
       const k = 0.55 + this.rand(0, 0.15) + 0.2 * (at.y / (radii.y * 2));
       b.add(blob, core, { position: at.toArray(), scale: r.clone().multiplyScalar(CORE).toArray(), yaw: a, tint: [k * this.rand(0.95, 1.08), k, k * this.rand(0.9, 1)] });
@@ -66,7 +66,11 @@ export class Bush extends WorldModel {
       for (let i = 0; i < 6; i++) {
         const a = this.rand(0, Math.PI * 2), h = this.rand(0.1, 0.7);
         const ring = Math.sqrt(1 - h * h);
-        const p = center.clone().add(new Vector3(Math.cos(a) * ring, h, Math.sin(a) * ring).multiply(radii).multiplyScalar(0.98));
+        // Berries sit between a clump's core and its leaf cards, so the cards hide them instead of
+        // leaving them floating outside the foliage.
+        const clump = clumps[i % clumps.length];
+        const p = clump.center.clone().add(new Vector3(Math.cos(a) * ring, h, Math.sin(a) * ring).multiply(clump.radii).multiplyScalar(0.7));
+        p.y = Math.max(p.y, 0.1);
         b.add(blob, berry, { position: p.toArray(), scale: [0.045, 0.045, 0.045] });
       }
     }
@@ -86,7 +90,7 @@ export class Bush extends WorldModel {
         const a = a0 + i * 2.39996 + (r() - 0.5) * 0.5;
         const depth = rand(0.65, 1);
         const at = cl.center.clone().add(new Vector3(Math.cos(a) * ring, h, Math.sin(a) * ring).multiply(cl.radii).multiplyScalar(depth));
-        at.y = Math.max(at.y, 0.1 + r() * 0.05); // cards never sink into the ground
+        at.y = Math.max(at.y, r() * 0.05); // low cards rest on the ground, half buried, rather than floating
         const v = (0.8 + 0.25 * Math.min(1, at.y / (radii.y * 2))) * (0.85 + 0.15 * (depth - 0.65) / 0.35);
         cards.push({
           center: at, size: rand(0.85, 1.15) * cardSize, angle: r() * Math.PI * 2,
