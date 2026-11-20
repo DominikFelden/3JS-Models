@@ -5,6 +5,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { models } from '../src/registry.ts';
+import { bakeModelImpostor, Forest, type ModelImpostor } from '../src/index.ts';
 import { preloadTextures, getTexture, TEXTURE_VARIANTS } from '../src/textures/index.ts';
 import { setToonShading, ToonOutlines } from '../src/toon/index.ts';
 
@@ -79,6 +80,57 @@ const texturesSection = document.getElementById('texturesSection') as any;
 const textureRows = document.getElementById('textureRows') as any;
 const paramsButton = document.getElementById('paramsButton') as any;
 const loading = document.getElementById('loading') as any;
+const previewRow = document.getElementById('impostorPreviewRow');
+const previewToggle = document.querySelector<HTMLInputElement>('#impostorPreview');
+const previewDistance = document.querySelector<HTMLInputElement>('#impostorPreviewDistance');
+const previewStatus = document.getElementById('impostorPreviewStatus');
+let previewAsset: ModelImpostor | null = null;
+let previewMesh: ReturnType<ModelImpostor['createMesh']> | null = null;
+const previewOrigin = new Vector3();
+
+function clearImpostorPreview() {
+  if (previewMesh) scene.remove(previewMesh);
+  previewAsset?.dispose();
+  previewMesh = previewAsset = null;
+  if (current) current.visible = true;
+  previewStatus.textContent = '';
+}
+
+function buildImpostorPreview() {
+  previewRow.hidden = current instanceof Forest;
+  if (!previewToggle.checked || !current || previewRow.hidden) return;
+  try {
+    previewAsset = bakeModelImpostor(current, { renderer });
+    if (!previewAsset) {
+      previewStatus.textContent = 'Impostor unavailable';
+      return;
+    }
+    previewMesh = previewAsset.createMesh();
+    previewMesh.position.copy(current.position);
+    previewMesh.quaternion.copy(current.quaternion);
+    previewMesh.scale.copy(current.scale);
+    scene.add(previewMesh);
+    updateImpostorPreview();
+  } catch (error) {
+    console.error('Could not bake model impostor:', error);
+    previewStatus.textContent = 'Impostor bake failed';
+  }
+}
+
+function updateImpostorPreview() {
+  if (!previewMesh) return;
+  const distance = previewDistance.valueAsNumber;
+  previewMesh.visible = previewDistance.validity.valid && Number.isFinite(distance)
+    && camera.position.distanceTo(current.getWorldPosition(previewOrigin)) >= distance;
+  current.visible = !previewMesh.visible;
+  const status = previewMesh.visible ? 'Impostor' : '3D model';
+  if (previewStatus.textContent !== status) previewStatus.textContent = status;
+}
+
+previewToggle.addEventListener('change', () => {
+  clearImpostorPreview();
+  buildImpostorPreview();
+});
 
 // Parameter values per model (kept when switching back) and the keys pinned below the 3D view.
 // A colour of `null` is "auto": the colours of the picked texture.
@@ -105,6 +157,7 @@ let pendingShow: ReturnType<typeof setTimeout> | undefined;
 function show(reframe) {
   clearTimeout(pendingShow);
   const entry = models[Number(select.value)];
+  clearImpostorPreview();
   if (current) {
     scene.remove(current);
     current.dispose?.(); // free this model's own geometries (shared ones stay)
@@ -117,6 +170,7 @@ function show(reframe) {
   seed = current.seed; // later changes (sliders) modify this very model; Re-roll picks a new seed
   seedLabel.textContent = current.seed !== undefined ? `seed ${current.seed}` : '';
   scene.add(current);
+  buildImpostorPreview();
   paramsButton.style.display = defs().length || usedTextures().length ? '' : 'none';
   if (modal.style.display === 'flex') renderTextures();
   if (!reframe) return;
@@ -357,6 +411,7 @@ async function start() {
     renderer.info.reset(); // count this frame's draw calls and triangles over all its render passes
     controls.update();
     current?.update?.(camera); // models with levels of detail (Forest) choose what to draw
+    updateImpostorPreview();
     outlines.render(scene, camera);
     frames++;
     const now = performance.now();

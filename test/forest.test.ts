@@ -7,6 +7,14 @@ import { InstanceBuffer } from '../src/forest/instances.ts';
 import { Undergrowth } from '../src/forest/undergrowth.ts';
 import { Bush } from '../src/models/Bush.ts';
 import { TallGrass, Bracken } from '../src/models/Plants.ts';
+import { bakeModelImpostor } from '../src/index.ts';
+
+test('model impostors fall back without WebGL and reject invalid bake sizes', () => {
+  const model = new Bush({ seed: 5 });
+  assert.equal(bakeModelImpostor(model), null);
+  assert.throws(() => bakeModelImpostor(model, { frameSize: 0 }), RangeError);
+  model.dispose();
+});
 
 test('instance buffers: one buffer for all meshes of a variant, grown on demand, only the used part uploaded', () => {
   const buffer = new InstanceBuffer(2);
