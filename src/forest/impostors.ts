@@ -1,12 +1,14 @@
 import {
   Scene, Mesh, OrthographicCamera, WebGLRenderTarget, MeshBasicMaterial, ShaderMaterial, MeshStandardMaterial,
   InstancedBufferGeometry, InstancedBufferAttribute, PlaneGeometry, DataTexture, Color, Vector2, Vector3,
+  InstancedInterleavedBuffer, InterleavedBufferAttribute, DynamicDrawUsage, type Vector4, type WebGLRenderer,
   RGBAFormat, UnsignedByteType, SRGBColorSpace, NoColorSpace, ClampToEdgeWrapping, LinearFilter,
   LinearMipmapLinearFilter, NearestFilter, NoToneMapping, DoubleSide,
 } from 'three';
 import { withBakeRenderer } from '../textures/bake.ts';
-import { FADE_PARS, FADE_TEST } from './fade.ts';
+import { FADE_PARS, fadeTest, type rangeUniform } from './fade.ts';
 import { BILLBOARD_ATTRIBUTES, BILLBOARD_VERTEX, injectBillboard } from './billboard.ts';
+import { START_CAPACITY } from './instances.ts';
 
 /**
  * Impostors: every tree variant is photographed once from many directions
@@ -22,6 +24,14 @@ import { BILLBOARD_ATTRIBUTES, BILLBOARD_VERTEX, injectBillboard } from './billb
  */
 export const IMPOSTOR_YAWS = 8;
 export const IMPOSTOR_ELEVATIONS = 4;
+
+type ViewCounts = { yaws: number, elevations: number };
+const TREE_VIEWS = { yaws: IMPOSTOR_YAWS, elevations: IMPOSTOR_ELEVATIONS };
+
+type ImpostorPlacement = { x: number, y: number, z: number, yaw: number, scale: number, variant: number };
+export type ImpostorBounds = { centreY: number, radius: number };
+type CameraUniform = { value: Vector3 };
+type TreeUniforms = { camera: CameraUniform, scale: { value: number }, range: ReturnType<typeof rangeUniform> };
 
 const SRGB_TO_LINEAR = new Float32Array(256).map((_, i) => {
   const c = i / 255;
@@ -63,6 +73,11 @@ void main() {
 #endif
 #ifdef SMOOTH
   vec3 n = normalize(vNormal);
+  #ifdef DOUBLE_SIDED
+  n *= gl_FrontFacing ? 1.0 : -1.0;
+  #elif defined(FLIP_SIDED)
+  n = -n;
+  #endif
 #else
   vec3 n = normalize(cross(dFdx(vPos), dFdy(vPos)));
   if (dot(n, uView) < 0.0) n = -n;
@@ -158,24 +173,31 @@ export function coverageMipmaps(data, width, height, frame) {
 }
 
 /** Atlas grid for `frames` frames of `size` pixels, kept within the GPU's texture size. */
-export function atlasLayout(variants, size, maxTextureSize = 4096) {
-  const frames = variants * IMPOSTOR_ELEVATIONS * IMPOSTOR_YAWS;
+export function atlasLayout(variants: number, size: number, maxTextureSize = 4096, views = TREE_VIEWS) {
+  const frames = variants * views.elevations * views.yaws;
   const cols = Math.ceil(Math.sqrt(frames));
   const rows = Math.ceil(frames / cols);
   const frame = Math.max(8, Math.min(size, Math.floor(maxTextureSize / cols), Math.floor(maxTextureSize / rows)));
   return { cols, rows, frame, width: cols * frame, height: rows * frame };
 }
 
+type ImpostorAtlas = ReturnType<typeof atlasLayout> & {
+  color: DataTexture, normal: DataTexture, means: Color[], views: ViewCounts,
+};
+
 /**
- * Photograph every variant from all impostor directions.
- *  - variants: [{ meshes: [Mesh], centreY, radius }] (meshes in tree space, base at the origin)
+ * Photograph every variant from all impostor directions. Meshes have their base at the origin.
  *  - renderer: the host's WebGLRenderer (optional, otherwise a private one)
  *  - frameSize: pixels per picture (default 128)
- * Returns { color, normal, cols, rows, frame, means: [Color] (linear average of each variant) }.
+ *  - views: yaw and elevation counts (trees use 8 x 4, smaller plants need fewer)
  */
-export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: any = {}) {
+export function bakeImpostors(
+  variants: (ImpostorBounds & {meshes: Mesh[]})[],
+  { renderer = null, frameSize = 128, views = TREE_VIEWS }: {renderer?: WebGLRenderer | null, frameSize?: number, views?: ViewCounts} = {},
+): ImpostorAtlas {
   return withBakeRenderer(renderer, (r) => {
-    const layout = atlasLayout(variants.length, frameSize, r.capabilities.maxTextureSize);
+    const { yaws, elevations } = views;
+    const layout = atlasLayout(variants.length, frameSize, r.capabilities.maxTextureSize, views);
     const { cols, frame: S, width: W, height: H } = layout;
     const scene = new Scene();
     const camera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 10);
@@ -200,10 +222,10 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: an
       if (!m.flatShading) defines.SMOOTH = '';
       if (m.map && m.alphaTest > 0) defines.CUTOUT = '';
       if (m.userData.billboard) defines.BILLBOARD = '';
-      const key = `${Object.keys(defines).join(',')}:${'CUTOUT' in defines ? `${m.map.uuid}:${m.alphaTest}` : ''}`;
+      const key = `${m.side}:${Object.keys(defines).join(',')}:${'CUTOUT' in defines ? `${m.map.uuid}:${m.alphaTest}` : ''}`;
       if (!normals.has(key)) {
         normals.set(key, new ShaderMaterial({
-          vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, defines, side: DoubleSide,
+          vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, defines, side: m.side,
           uniforms: { uView, uMap: { value: m.map }, uAlphaTest: { value: m.alphaTest } },
         }));
       }
@@ -238,16 +260,16 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: an
           const R = v.radius;
           Object.assign(camera, { left: -R, right: R, top: R, bottom: -R, near: R * 0.01, far: R * 4 });
           camera.updateProjectionMatrix();
-          for (let e = 0; e < IMPOSTOR_ELEVATIONS; e++) {
-            const el = (e / (IMPOSTOR_ELEVATIONS - 1)) * Math.PI / 2;
-            for (let y = 0; y < IMPOSTOR_YAWS; y++) {
-              const a = (y / IMPOSTOR_YAWS) * Math.PI * 2;
-              const idx = (vi * IMPOSTOR_ELEVATIONS + e) * IMPOSTOR_YAWS + y;
+          for (let e = 0; e < elevations; e++) {
+            const el = (e / (elevations - 1)) * Math.PI / 2;
+            for (let y = 0; y < yaws; y++) {
+              const a = (y / yaws) * Math.PI * 2;
+              const idx = (vi * elevations + e) * yaws + y;
               const x0 = (idx % cols) * S, y0 = Math.floor(idx / cols) * S;
               dir.set(Math.sin(a) * Math.cos(el), Math.sin(el), Math.cos(a) * Math.cos(el));
               camera.position.copy(centre).addScaledVector(dir, R * 2);
               // Straight above, "up" is the limit of the side views' up for this yaw, so the picture turns with the yaw.
-              if (e === IMPOSTOR_ELEVATIONS - 1) camera.up.set(-Math.sin(a), 0, -Math.cos(a)); else camera.up.set(0, 1, 0);
+              if (e === elevations - 1) camera.up.set(-Math.sin(a), 0, -Math.cos(a)); else camera.up.set(0, 1, 0);
               camera.lookAt(centre);
               camera.updateMatrixWorld();
               uView.value.copy(dir);
@@ -263,9 +285,10 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: an
       const normalData = new Uint8Array(W * H * 4);
       r.readRenderTargetPixels(colorTarget, 0, 0, W, H, colorData);
       r.readRenderTargetPixels(normalTarget, 0, 0, W, H, normalData);
-      const means = fillAndMeasure(colorData, layout, variants.length);
+      const means = fillAndMeasure(colorData, layout, variants.length, elevations * yaws);
       return {
         ...layout,
+        views,
         color: atlasTexture(colorData, W, H, SRGBColorSpace, S),
         normal: atlasTexture(normalData, W, H, NoColorSpace),
         means,
@@ -288,8 +311,7 @@ export function bakeImpostors(variants, { renderer = null, frameSize = 128 }: an
  * empty pixels of every frame in its variant's average sRGB colour, so the
  * soft (mipmapped) outline of a far tree keeps the tree's colour.
  */
-function fillAndMeasure(data, { cols, frame: S, width: W }, nVariants) {
-  const per = IMPOSTOR_ELEVATIONS * IMPOSTOR_YAWS;
+function fillAndMeasure(data, { cols, frame: S, width: W }, nVariants, per) {
   const means = [];
   for (let v = 0; v < nVariants; v++) {
     const sum = [0, 0, 0], raw = [0, 0, 0];
@@ -315,20 +337,21 @@ function fillAndMeasure(data, { cols, frame: S, width: W }, nVariants) {
   return means;
 }
 
-/**
- * The impostors of a forest: one instanced quad per tree.
- *  - trees: [{x, y, z, yaw, scale, variant}] in forest space
- *  - variants: [{ centreY, radius }] per tree variant (crown centre height, bounding radius)
- *  - atlas: result of `bakeImpostors`, or null (no WebGL: plain colour, never really drawn)
- *  - shared: { range, camera, scale } uniforms owned by the forest
- */
-export function createImpostors(trees, variants, atlas, shared, color = new Color(0x3a6a30)) {
+function impostorGeometry() {
   const quad = new PlaneGeometry(1, 1);
   const geometry = new InstancedBufferGeometry();
   geometry.index = quad.index;
   geometry.setAttribute('position', quad.attributes.position);
   geometry.setAttribute('normal', quad.attributes.normal);
   geometry.setAttribute('uv', quad.attributes.uv);
+  return geometry;
+}
+
+/** One static instanced quad per tree; the vertex shader collapses trees outside the tier's range. */
+export function createImpostors(
+  trees: ImpostorPlacement[], variants: ImpostorBounds[], atlas: ImpostorAtlas | null, shared: TreeUniforms, color = new Color(0x3a6a30),
+) {
+  const geometry = impostorGeometry();
   const pos = new Float32Array(trees.length * 4);
   const meta = new Float32Array(trees.length * 2);
   trees.forEach((t, i) => {
@@ -338,39 +361,119 @@ export function createImpostors(trees, variants, atlas, shared, color = new Colo
   geometry.setAttribute('iPos', new InstancedBufferAttribute(pos, 4));
   geometry.setAttribute('iMeta', new InstancedBufferAttribute(meta, 2));
   geometry.instanceCount = trees.length;
-
-  const material = new MeshStandardMaterial({ color: atlas ? 0xffffff : color, roughness: 1, metalness: 0, side: DoubleSide });
-  const variantInfo = variants.map((v) => new Vector2(v.centreY, v.radius));
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, {
-      uForestCam: shared.camera, uForestScale: shared.scale, uImpVariants: { value: variantInfo },
-      uImpGrid: { value: new Vector2(atlas?.cols ?? 1, atlas?.rows ?? 1) },
-      uImpColor: { value: atlas?.color ?? null }, uImpNormal: { value: atlas?.normal ?? null },
-    });
-    const defines = `#define IMP_YAWS ${IMPOSTOR_YAWS}.0\n#define IMP_ELEVS ${IMPOSTOR_ELEVATIONS}.0\n#define IMP_VARIANTS ${variantInfo.length}\n${atlas ? '#define IMP_ATLAS\n' : ''}`;
-    shader.vertexShader = `${defines}${IMPOSTOR_VERT_PARS}${shader.vertexShader.replace('#include <begin_vertex>', IMPOSTOR_VERT)}`;
-    shader.fragmentShader = `${defines}${IMPOSTOR_FRAG_PARS}${shader.fragmentShader
-      .replace('#include <map_fragment>', IMPOSTOR_MAP)
-      .replace('#include <normal_fragment_begin>', IMPOSTOR_NORMAL)}`;
-    shader.uniforms.uForestRange = shared.range;
-    shader.fragmentShader = FADE_PARS + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `${FADE_TEST}\n#include <clipping_planes_fragment>`);
-  };
-  material.customProgramCacheKey = () => `forest-impostor:${variantInfo.length}:${!!atlas}`;
-  const mesh = new Mesh(geometry, material);
-  mesh.frustumCulled = false; // trees are culled by distance in the vertex shader
-  mesh.castShadow = false;
-  mesh.receiveShadow = false;
+  const mesh = impostorMesh(geometry, atlas, shared.camera, { variants, shared, color });
   mesh.name = 'ForestImpostors';
   return mesh;
 }
 
+function impostorMesh(
+  geometry: InstancedBufferGeometry, atlas: ImpostorAtlas | null, camera: CameraUniform,
+  trees?: { variants: ImpostorBounds[], shared: TreeUniforms, color: Color },
+) {
+  const material = new MeshStandardMaterial({ color: atlas ? 0xffffff : trees?.color, roughness: 1, metalness: 0, side: DoubleSide });
+  const variantInfo = trees?.variants.map((v) => new Vector2(v.centreY, v.radius));
+  const { yaws, elevations } = atlas?.views ?? TREE_VIEWS;
+  const defines = `#define IMP_YAWS ${yaws}.0\n#define IMP_ELEVS ${elevations}.0\n`
+    + (variantInfo ? `#define IMP_VARIANTS ${variantInfo.length}\n` : '#define IMP_PLANTS\n')
+    + (atlas ? '#define IMP_ATLAS\n' : '');
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, {
+      uForestCam: camera,
+      uImpGrid: { value: new Vector2(atlas?.cols ?? 1, atlas?.rows ?? 1) },
+      uImpColor: { value: atlas?.color ?? null }, uImpNormal: { value: atlas?.normal ?? null },
+    });
+    if (trees) Object.assign(shader.uniforms, {
+      uForestRange: trees.shared.range, uForestScale: trees.shared.scale, uImpVariants: { value: variantInfo },
+    });
+    shader.vertexShader = `${defines}${IMPOSTOR_VERT_PARS}${shader.vertexShader.replace('#include <begin_vertex>', IMPOSTOR_VERT)}`;
+    shader.fragmentShader = `${defines}${FADE_PARS}${IMPOSTOR_FRAG_PARS}${shader.fragmentShader
+      .replace('#include <clipping_planes_fragment>', `${fadeTest(trees ? 'uForestRange' : 'vImpRange')}\n#include <clipping_planes_fragment>`)
+      .replace('#include <map_fragment>', IMPOSTOR_MAP)
+      .replace('#include <normal_fragment_begin>', IMPOSTOR_NORMAL)}`;
+  };
+  material.customProgramCacheKey = () => `forest-impostor:${variantInfo?.length ?? 'plants'}:${yaws}:${elevations}:${!!atlas}`;
+  const mesh = new Mesh(geometry, material);
+  mesh.frustumCulled = false; // the shader positions the quads; plant instances are culled before they're packed
+  return mesh;
+}
+
+const INSTANCE_STRIDE = 12;
+
+/** One draw for the culled plants of every kind, with their own atlas frames and fade ranges. */
+export class PlantImpostorBatch {
+  readonly mesh: Mesh<InstancedBufferGeometry, MeshStandardMaterial>;
+  private atlas: ImpostorAtlas;
+  private camera = { value: new Vector3() };
+  private instances: InstancedInterleavedBuffer;
+  count = 0;
+
+  constructor(atlas: ImpostorAtlas) {
+    this.atlas = atlas;
+    this.mesh = impostorMesh(impostorGeometry(), atlas, this.camera);
+    this.mesh.name = 'PlantImpostors';
+    this.instances = this.allocate(START_CAPACITY);
+    this.commit();
+  }
+
+  private allocate(capacity: number) {
+    const buffer = new InstancedInterleavedBuffer(new Float32Array(capacity * INSTANCE_STRIDE), INSTANCE_STRIDE);
+    buffer.setUsage(DynamicDrawUsage);
+    this.mesh.geometry.setAttribute('iPos', new InterleavedBufferAttribute(buffer, 4, 0));
+    this.mesh.geometry.setAttribute('iMeta', new InterleavedBufferAttribute(buffer, 4, 4));
+    this.mesh.geometry.setAttribute('iRange', new InterleavedBufferAttribute(buffer, 4, 8));
+    return buffer;
+  }
+
+  reset(camera: Vector3) {
+    this.count = 0;
+    this.camera.value.copy(camera);
+  }
+
+  push(plant: ImpostorPlacement, bounds: ImpostorBounds, range: Vector4) {
+    if (this.count === this.instances.count) {
+      const previous = this.instances;
+      this.mesh.geometry.dispose(); // GPU buffers cannot be resized
+      this.instances = this.allocate(previous.count * 2);
+      this.instances.array.set(previous.array);
+    }
+    const { x, y, z, scale, yaw, variant } = plant;
+    const { centreY, radius } = bounds;
+    const a = this.instances.array, o = this.count++ * INSTANCE_STRIDE;
+    a[o] = x; a[o + 1] = y; a[o + 2] = z; a[o + 3] = scale;
+    a[o + 4] = yaw; a[o + 5] = variant; a[o + 6] = centreY; a[o + 7] = radius;
+    range.toArray(a, o + 8);
+  }
+
+  commit() {
+    this.mesh.geometry.instanceCount = this.count;
+    this.mesh.visible = this.count > 0;
+    if (!this.mesh.visible) return;
+    this.instances.clearUpdateRanges();
+    this.instances.addUpdateRange(0, this.count * INSTANCE_STRIDE);
+    this.instances.needsUpdate = true;
+  }
+
+  dispose() {
+    this.mesh.geometry.dispose();
+    this.mesh.material.dispose();
+    this.atlas.color.dispose();
+    this.atlas.normal.dispose();
+  }
+}
+
 const IMPOSTOR_VERT_PARS = /* glsl */ `
 attribute vec4 iPos;
-attribute vec2 iMeta;
 uniform vec3 uForestCam;
+#ifdef IMP_PLANTS
+attribute vec4 iMeta;
+attribute vec4 iRange;
+varying vec4 vImpRange;
+#else
+attribute vec2 iMeta;
 uniform float uForestScale;
 uniform vec4 uForestRange;
 uniform vec2 uImpVariants[IMP_VARIANTS];
+#endif
 varying float vForestDist;
 varying vec2 vImpUv;
 varying vec4 vImpFrames;
@@ -392,10 +495,22 @@ vImpN1 = vec3(0.0, 1.0, 0.0);
 vImpN2 = vec3(0.0, 0.0, 1.0);
 {
   float scale = iPos.w;
+#ifdef IMP_PLANTS
+  // Match fadeMaterial's world-space distance to the plant's base.
+  float d = distance((modelMatrix * vec4(iPos.xyz, 1.0)).xyz, cameraPosition);
+  vec4 range = iRange;
+  vImpRange = range;
+#else
   float d = uForestScale * distance(iPos.xyz, uForestCam);
+  vec4 range = uForestRange;
+#endif
   vForestDist = d;
-  if (d >= uForestRange.x - 0.5 * uForestRange.y && d < uForestRange.z + 0.5 * uForestRange.w) {
+  if (d >= range.x - 0.5 * range.y && d < range.z + 0.5 * range.w) {
+#ifdef IMP_PLANTS
+    vec2 info = iMeta.zw;
+#else
     vec2 info = uImpVariants[int(iMeta.y + 0.5)];
+#endif
     vec3 centre = iPos.xyz + vec3(0.0, info.x * scale, 0.0);
     vec3 f = uForestCam - centre;
     float fl = length(f);
@@ -410,7 +525,9 @@ vImpN2 = vec3(0.0, 0.0, 1.0);
     float c = cos(iMeta.x);
     float s = sin(iMeta.x);
     vec3 l = vec3(c * f.x - s * f.z, f.y, s * f.x + c * f.z);
-    float az = atan(l.x, l.z);
+    // At the pole the +X billboard right corresponds to a +Z view in forest space.
+    vec2 horizontal = rl > 1e-4 ? l.xz : vec2(-s, c);
+    float az = atan(horizontal.x, horizontal.y);
     if (az < 0.0) az += 6.28318531;
     float fy = az / (6.28318531 / IMP_YAWS);
     float y0 = mod(floor(fy), IMP_YAWS);
@@ -432,6 +549,9 @@ const IMPOSTOR_FRAG_PARS = /* glsl */ `
 uniform vec2 uImpGrid;
 uniform sampler2D uImpColor;
 uniform sampler2D uImpNormal;
+#ifdef IMP_PLANTS
+varying vec4 vImpRange;
+#endif
 varying vec2 vImpUv;
 varying vec4 vImpFrames;
 varying vec2 vImpBlend;
@@ -446,7 +566,8 @@ vec2 impUv(float frame) {
 }
 `;
 
-// Two neighbouring yaw pictures are blended; between two heights the dither picks one.
+// Trees blend two neighbouring yaws. Plants dither both axes: one colour and one normal lookup,
+// without artificially thickening a sparse fern or grass tuft by overlaying two silhouettes.
 const IMPOSTOR_MAP = /* glsl */ `
 vec3 impNormal = vec3(0.0, 0.0, 1.0);
 #ifdef IMP_ATLAS
@@ -454,19 +575,27 @@ vec3 impNormal = vec3(0.0, 0.0, 1.0);
   bool upper = forestDither(gl_FragCoord.yx + 7.0) < vImpBlend.y;
   float fa = upper ? vImpFrames.z : vImpFrames.x;
   float fb = upper ? vImpFrames.w : vImpFrames.y;
-  vec2 ua = impUv(fa);
-  vec2 ub = impUv(fb);
   // The dither jumps between atlas rows from pixel to pixel; screen derivatives of the
   // smooth quad uv keep the GPU from treating that jump as minification (tiny mips).
   vec2 gx = dFdx(vImpUv) / uImpGrid;
   vec2 gy = dFdy(vImpUv) / uImpGrid;
+#ifdef IMP_PLANTS
+  bool nextYaw = forestDither(gl_FragCoord.xy + vec2(23.0, 13.0)) < vImpBlend.x;
+  vec2 uv = impUv(nextYaw ? fb : fa);
+  vec4 texel = textureGrad(uImpColor, uv, gx, gy);
+  if (texel.a < ${ALPHA_CUT.toFixed(3)}) discard;
+  vec3 nl = textureGrad(uImpNormal, uv, gx, gy).xyz * 2.0 - 1.0;
+#else
+  vec2 ua = impUv(fa);
+  vec2 ub = impUv(fb);
   vec4 ta = textureGrad(uImpColor, ua, gx, gy);
   vec4 tb = textureGrad(uImpColor, ub, gx, gy);
   // Union of both silhouettes (averaging their alpha would punch holes where they differ).
   vec4 texel = vec4(mix(ta.rgb, tb.rgb, vImpBlend.x), max(ta.a, tb.a));
   if (texel.a < ${ALPHA_CUT.toFixed(3)}) discard;
-  diffuseColor.rgb *= texel.rgb;
   vec3 nl = mix(textureGrad(uImpNormal, ua, gx, gy).xyz, textureGrad(uImpNormal, ub, gx, gy).xyz, vImpBlend.x) * 2.0 - 1.0;
+#endif
+  diffuseColor.rgb *= texel.rgb;
   impNormal = normalize(mat3(vImpN0, vImpN1, vImpN2) * nl);
 }
 #endif

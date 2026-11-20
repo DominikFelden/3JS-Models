@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { BoxGeometry, MeshBasicMaterial, Matrix4, Quaternion, Vector3 } from 'three';
+import { BoxGeometry, DataTexture, MeshBasicMaterial, Matrix4, Quaternion, Vector3 } from 'three';
 import { rangeUniform, setRange, inRange, FAR } from '../src/forest/fade.ts';
-import { coverageMipmaps, ALPHA_CUT, atlasLayout } from '../src/forest/impostors.ts';
+import { coverageMipmaps, ALPHA_CUT, atlasLayout, PlantImpostorBatch } from '../src/forest/impostors.ts';
 import { InstanceBuffer } from '../src/forest/instances.ts';
 import { Undergrowth } from '../src/forest/undergrowth.ts';
 import { Bush } from '../src/models/Bush.ts';
@@ -53,12 +53,13 @@ test('shadow-only meshes are drawn into shadow maps but not on screen', () => {
   assert.strictEqual(caster.count, 1);
 });
 
-test('undergrowth: bushes cross-fade to a low-poly copy at lodDistance, low plants end sooner, casters only with shadows', () => {
+test('undergrowth without an atlas: distant bushes use a low-poly mesh, low plants end sooner', () => {
   const everything = { intersectsBox: () => true, intersectsSphere: () => true };
   const camera = new Vector3(0, 1.5, 0);
   const fade = 0.15;
   // A level drawn from `near` to `far` also draws the dither band around both ends (as `setRange` and `rangeBand` compute it).
-  const from = (near) => near - near * fade / 2, to = (far) => far + far * fade / 2;
+  const to = (far) => far + far * fade / 2;
+  const bushSwitch = 25 / (1 - fade / 2);
   for (const shadows of [false, true]) {
     const ug = new Undergrowth({ count: 4000, area: 160, seed: 3, variants: 2, fade, shadows });
     ug.update(camera, 1, everything);
@@ -70,7 +71,7 @@ test('undergrowth: bushes cross-fade to a low-poly copy at lodDistance, low plan
       const end = 60 * v.kind.config.distance;
       const dx = t.x - camera.x, dy = t.y - camera.y, dz = t.z - camera.z;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const bands = v.levels.length === 2 ? [[-1, to(25)], [from(25), to(end)]] : [[-1, to(end)]];
+      const bands = v.levels.length === 2 ? [[-1, to(bushSwitch)], [25, to(end)]] : [[-1, to(end)]];
       let drawn = false;
       bands.forEach(([lo, hi], l) => { if (d >= lo && d < hi) { expected[t.variant][l].add(`${t.x},${t.z}`); drawn = true; } });
       if (drawn) visible++;
@@ -99,6 +100,49 @@ test('undergrowth: bushes cross-fade to a low-poly copy at lodDistance, low plan
     assert.ok(bushes.every((v) => v.levels[1].buffer.meshes.every((m) => !m.castShadow)), 'far bushes cast no shadow');
     ug.dispose();
   }
+});
+
+test('undergrowth impostors batch every visible distant kind and preserve the 25 m close band', () => {
+  const ug = new Undergrowth({ count: 4000, seed: 3, area: 160, variants: 2, lodDistance: Infinity });
+  const views = { yaws: 4, elevations: 3 };
+  // Node has no WebGL; supply a stand-in atlas so the actual CPU selection and buffers run.
+  const batch = new PlantImpostorBatch({
+    ...atlasLayout(ug._variants.length, 8, 4096, views), views, means: [],
+    color: new DataTexture(), normal: new DataTexture(),
+  });
+  ug._impostors = batch;
+  ug.lodDistance = 25;
+  const frustum = { intersectsBox: (box) => box.max.x > 0, intersectsSphere: (sphere) => sphere.center.x > 0 };
+  const camera = new Vector3(0, 1.5, 0);
+  const distanceOf = (t) => Math.hypot(t.x, t.y - camera.y, t.z);
+  ug.update(camera, 1, frustum);
+  const submitted = () => {
+    const positions = batch.mesh.geometry.getAttribute('iPos');
+    const variants = batch.mesh.geometry.getAttribute('iMeta');
+    return Array.from({ length: batch.mesh.geometry.instanceCount }, (_, i) =>
+      `${positions.getX(i)},${positions.getZ(i)},${variants.getY(i)}`).sort();
+  };
+  const keyOf = (t) => `${Math.fround(t.x)},${Math.fround(t.z)},${t.variant}`;
+  const expected = ug._plants.filter((t) => t.x > 0 && distanceOf(t) >= 25
+    && distanceOf(t) < 60 * ug._variants[t.variant].kind.config.distance * 1.075);
+  assert.strictEqual(new Set(expected.map((t) => ug._variants[t.variant].kind)).size, 5);
+  assert.deepStrictEqual(submitted(), expected.map(keyOf).sort(), 'only visible plants past 25 m, with their original variant indices');
+
+  ug.update(camera, 1, frustum, 0.2);
+  const actual3D = new Set<string>();
+  ug._variants.forEach(({ levels: [{ buffer }] }, variant) => {
+    const data = buffer.attribute.array;
+    for (let i = 0; i < buffer.count; i++) actual3D.add(`${data[i * 16 + 12]},${data[i * 16 + 14]},${variant}`);
+  });
+  assert.ok(ug._plants.filter((t) => t.x > 0 && distanceOf(t) < 25).every((t) => actual3D.has(keyOf(t))));
+  for (const { levels: [near] } of ug._kinds) assert.ok(near.range.value.z - near.range.value.w / 2 >= 25 - 1e-9);
+  assert.strictEqual(batch.mesh.visible, false, 'there is no distant band left at minimum detail');
+
+  camera.y = 34; // above the full-detail/transition band; only impostors can draw
+  ug.update(camera, 1, frustum);
+  assert.ok(ug.stats.visible > 0);
+  assert.deepStrictEqual(ug.stats, { visible: batch.count, triangles: batch.count * 2, drawCalls: 1 });
+  ug.dispose();
 });
 
 test('fade ranges of neighbouring tiers overlap only in the dither band', () => {
@@ -142,4 +186,8 @@ test('impostor atlas layout fits all frames', () => {
   const L = atlasLayout(5, 128);
   assert.ok(L.cols * L.rows >= 5 * 32);
   assert.ok(L.width <= 4096 && L.height <= 4096);
+  const views = { yaws: 4, elevations: 3 };
+  const plants = atlasLayout(15, 48, 4096, views);
+  assert.ok(plants.cols * plants.rows >= 15 * views.yaws * views.elevations);
+  assert.ok(plants.cols * plants.rows < 15 * 32, 'plants use fewer views than the tree atlas');
 });

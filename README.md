@@ -34,7 +34,9 @@ scene.add(new SimpleTree());
 
 `Forest` (`src/Forest.js`) builds thousands of `LeafTree`s (or, with `treeType: 'stylized'`, `StylizedTree`s) cheaply enough to fly over on a phone. Only the nearest trees are real 3D trees; farther away the forest is an illusion, in tiers chosen per tree by its distance:
 
-With the `plants` option (a count) `Forest` also scatters undergrowth (`Undergrowth`, `src/forest/undergrowth.ts`): `Fern`, `Bracken`, `TallGrass`, `Hosta` and `Bush` variants, instanced per variant, culled in chunks and dither-faded out beyond `plantDistance` (60; low plants, a few pixels of green from afar, sooner: ferns at 85 %, grass and hostas at 70 % of it). Bushes, by far the costliest plants, cross-fade to their `lowPoly` copy from `plantLodDistance` (25) on. They avoid the trunks, never cast shadows unless `plantShadows` is set (without it their shadow bodies are not even built), and use their own random stream, so the trees stay where they were. `stats.plants` counts the plants drawn.
+With `plants` (a count), `Forest` scatters seeded `Fern`, `Bracken`, `TallGrass`, `Hosta` and `Bush` variants between the trunks without moving any trees. Plants keep their full geometry up to `plantLodDistance` (25 m by default), then dither into lit, camera-facing impostors baked from side and overhead views of the same variants. Only in-range, in-view impostors are submitted, at two triangles per plant in one shared draw call. Plants fade out at `plantDistance` (60 m; ferns at 85%, grass and hostas at 70%). Auto Detail can shorten the outer range without affecting the fully detailed band.
+
+`plantLodDistance: Infinity` disables plant LOD. `plantImpostors` defaults to the forest's `impostors` setting. If disabled or WebGL baking is unavailable, distant bushes use the `lowPoly` mesh and the other plants stay 3D. `plantShadows` (off by default) enables simple shadows from nearby 3D plants, not impostors. `stats.plants` counts each selected plant once, even during the cross-fade.
 
 | Tier | Distance (default) | What is drawn | Cost |
 |---|---|---|---|

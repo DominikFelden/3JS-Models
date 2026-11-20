@@ -125,10 +125,11 @@ const byNear = (a, b) => a.near - b.near;
  *  - sizeVariety: how much the variants differ in trunk height and thickness (default 1, 0 = as the seeds make them):
  *    the variants are spread over tall and slender, short and stout trees, so the forest is no plantation
  *  - plants: number of ground plants between the trees (default 0): ferns, bracken, tall grass, broadleaf plants and bushes, see
- *    `Undergrowth`. They are drawn only within `plantDistance` (default 60, scaled by `detail`; grass and broadleaf plants end at
- *    70 %, ferns at 85 % of it) and cost no CPU far from the camera. Bushes turn into a cheaper copy of themselves (bigger, fewer
- *    leaf cards) from `plantLodDistance` on (default 25, scaled by `detail`; Infinity keeps the full bushes).
- *    Options: plantVariants (seeds per kind, default 3), plantShadows (default false), plantOptions (passed to every plant)
+ *    `Undergrowth`. All kinds cross-fade to impostors from `plantLodDistance` (default 25, Infinity disables plant LOD)
+ *    until `plantDistance` (default 60; grass and hostas end at 70%, ferns at 85%). `detail` reduces that outer range,
+ *    not the fully detailed band. `plantImpostors` defaults to `impostors`; if off or unavailable, bushes use low-poly
+ *    meshes far away while other plants stay 3D. Options: plantVariants (default 3 per kind), plantShadows (default false),
+ *    plantOptions (passed to every plant).
  *  - renderer: your WebGLRenderer, used to bake the impostors (otherwise a temporary one is used)
  *
  * Without WebGL (Node) nothing is baked: impostors have no pictures, the rest
@@ -184,7 +185,8 @@ export class Forest extends WorldModel {
       count = 1000, area = 160, variants = 6, treeType = 'leaf', complexity = null, levels: levelsOption = null, lodDistances = [12], lod = true,
       impostors = true, impostorDistance = 25, impostorResolution = 128, canopy = true, canopyDistance = 600,
       maxDistance = Infinity, fade = 0.12, detail = 1, chunkSize = 32,
-      shadows = true, treeOptions = {}, plants = 0, plantDistance = 60, plantLodDistance = 25, plantVariants = 3, plantShadows = false, plantOptions = {}, heightAt = null, minScale = 0.7, maxScale = 1.35, sizeVariety = 1, renderer = null,
+      shadows = true, treeOptions = {}, plants = 0, plantDistance = 60, plantLodDistance, plantImpostors = impostors,
+      plantVariants = 3, plantShadows = false, plantOptions = {}, heightAt = null, minScale = 0.7, maxScale = 1.35, sizeVariety = 1, renderer = null,
     } = options;
     this.count = WorldModel.clampInt(count, 0, 200000, 1000);
     this.treeType = FOREST_TREE_TYPES[treeType] ? treeType : 'leaf';
@@ -364,7 +366,7 @@ export class Forest extends WorldModel {
     if (plants > 0) {
       this.undergrowth = new Undergrowth({
         count: plants, area, seed: this.seed ^ 0x91a47, variants: plantVariants, distance: plantDistance, lodDistance: plantLodDistance, fade, shadows: plantShadows,
-        heightAt, avoid: this._trees, plantOptions,
+        heightAt, avoid: this._trees, plantOptions, impostors: plantImpostors, renderer,
       });
       this.add(this.undergrowth);
     }
