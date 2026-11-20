@@ -28,10 +28,11 @@ varying float vForestDist;
 ${DITHER_GLSL}
 `;
 
-export const FADE_TEST = /* glsl */ `
+/** Same dither test for a uniform range (trees) or a per-instance range (plant impostors). */
+export const fadeTest = (range = 'uForestRange') => /* glsl */ `
 {
   float forestH = forestDither(gl_FragCoord.xy) - 0.5;
-  if (vForestDist < uForestRange.x + uForestRange.y * forestH || vForestDist >= uForestRange.z + uForestRange.w * forestH) discard;
+  if (vForestDist < ${range}.x + ${range}.y * forestH || vForestDist >= ${range}.z + ${range}.w * forestH) discard;
 }
 `;
 
@@ -71,7 +72,7 @@ export function rangeBand(range, band = { lo: 0, hi: 0 }) {
 /** Inject the fade test into a material's fragment shader (`vForestDist` must be set by the vertex shader). */
 export function injectFadeFragment(shader, range) {
   shader.uniforms.uForestRange = range;
-  shader.fragmentShader = FADE_PARS + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `${FADE_TEST}\n#include <clipping_planes_fragment>`);
+  shader.fragmentShader = FADE_PARS + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `${fadeTest()}\n#include <clipping_planes_fragment>`);
 }
 
 /**
