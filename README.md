@@ -11,6 +11,32 @@ scene.add(new SimpleTree());
 ```
 `three` (>= 0.170) and [`lamina`](https://www.npmjs.com/package/lamina) are peer dependencies: the host project provides them (`npm install three lamina`). Geometries, materials and textures are created once and shared by all instances.
 
+## Optional model impostors
+
+The importing game chooses which model variants to bake and when to swap to their impostors. Bake once for each reusable combination of seed and visual options, then create a two-triangle proxy per placement that shares the baked textures, material and geometry. Models you don't explicitly bake are unchanged.
+
+```js
+import { House, bakeModelImpostor } from '3js-models';
+
+const model = new House({ seed: 42 });
+const asset = bakeModelImpostor(model, { renderer, frameSize: 128 });
+const proxy = asset?.createMesh();
+// Keep the proxy and 3D model under the same placement transform.
+placement.add(model);
+if (proxy) placement.add(proxy);
+
+function updateLod(distance) {
+  model.visible = !proxy || distance < 25;
+  if (proxy) proxy.visible = !model.visible;
+}
+updateLod(0);
+// At teardown, remove all proxies before calling asset?.dispose().
+```
+
+The bake captures the current pose of a static mesh hierarchy, including views from above and below, but ignores the root's position, rotation and scale. The atlas captures base color and normals for scene lighting; it does not reproduce animation, blended transparency or custom material effects. Proxies do not cast shadows. Baking uses WebGL and returns `null` when no canvas or renderer is available; keep the original model in that case. `Forest` keeps its own batched LOD system.
+
+In the viewer, enable **Preview impostor** and zoom out past **Distance** (25 world units by default), or set the distance to `0` to inspect the impostor up close. The preview is separate from the Forest controls.
+
 ## Models
 | Class | Options besides position/rotation/size | Description | Collider tags (in order) |
 |---|---|---|---|

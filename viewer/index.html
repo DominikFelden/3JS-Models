@@ -60,6 +60,11 @@
     </div>
     <div style="margin-top:6px"><button id="reroll">Re-roll (new random seed)</button> <span id="seed"></span></div>
     <div style="margin-top:6px"><button id="paramsButton" style="display:none">Parameters…</button></div>
+    <div id="impostorPreviewRow" style="margin-top:6px">
+      <label><input id="impostorPreview" type="checkbox" /> Preview impostor</label>
+      <label>Distance <input id="impostorPreviewDistance" type="number" min="0" step="any" value="25" style="width:5em" /></label>
+      <output id="impostorPreviewStatus" aria-live="polite"></output>
+    </div>
     <div style="margin-top:6px"><label><input id="toon" type="checkbox" checked /> Toon shading</label> <label><input id="outlines" type="checkbox" checked /> Outlines</label></div>
   </div>
   <div id="stats"></div>

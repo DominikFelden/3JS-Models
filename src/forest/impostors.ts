@@ -1,6 +1,6 @@
 import {
   Scene, Mesh, OrthographicCamera, WebGLRenderTarget, MeshBasicMaterial, ShaderMaterial, MeshStandardMaterial,
-  InstancedBufferGeometry, InstancedBufferAttribute, PlaneGeometry, DataTexture, Color, Vector2, Vector3,
+  InstancedBufferGeometry, InstancedBufferAttribute, PlaneGeometry, DataTexture, Color, Vector2, Vector3, Sphere,
   InstancedInterleavedBuffer, InterleavedBufferAttribute, DynamicDrawUsage, type Vector4, type WebGLRenderer,
   RGBAFormat, UnsignedByteType, SRGBColorSpace, NoColorSpace, ClampToEdgeWrapping, LinearFilter,
   LinearMipmapLinearFilter, NearestFilter, NoToneMapping, DoubleSide,
@@ -47,15 +47,20 @@ ${BILLBOARD_ATTRIBUTES}
 #endif
 varying vec3 vPos;
 varying vec3 vNormal;
+#ifdef CUTOUT
 varying vec2 vUv;
+uniform mat3 uMapTransform;
+#endif
 void main() {
   vec3 transformed = position;
 #ifdef BILLBOARD
 ${BILLBOARD_VERTEX}
 #endif
-  vPos = transformed;
-  vNormal = normal;
-  vUv = uv;
+  vPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  vNormal = transpose(mat3(viewMatrix)) * (normalMatrix * normal);
+#ifdef CUTOUT
+  vUv = (uMapTransform * vec3(uv, 1.0)).xy;
+#endif
   gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
 }
 `;
@@ -64,12 +69,17 @@ const NORMAL_FRAG = /* glsl */ `
 uniform vec3 uView;
 uniform sampler2D uMap;
 uniform float uAlphaTest;
+uniform float uOpacity;
 varying vec3 vPos;
 varying vec3 vNormal;
+#ifdef CUTOUT
 varying vec2 vUv;
+#endif
 void main() {
 #ifdef CUTOUT
-  if (texture2D(uMap, vUv).a < uAlphaTest) discard;
+  if (texture2D(uMap, vUv).a * uOpacity < uAlphaTest) discard;
+#else
+  if (uOpacity < uAlphaTest) discard;
 #endif
 #ifdef SMOOTH
   vec3 n = normalize(vNormal);
@@ -181,7 +191,7 @@ export function atlasLayout(variants: number, size: number, maxTextureSize = 409
   return { cols, rows, frame, width: cols * frame, height: rows * frame };
 }
 
-type ImpostorAtlas = ReturnType<typeof atlasLayout> & {
+export type ImpostorAtlas = ReturnType<typeof atlasLayout> & {
   color: DataTexture, normal: DataTexture, means: Color[], views: ViewCounts,
 };
 
@@ -192,8 +202,9 @@ type ImpostorAtlas = ReturnType<typeof atlasLayout> & {
  *  - views: yaw and elevation counts (trees use 8 x 4, smaller plants need fewer)
  */
 export function bakeImpostors(
-  variants: (ImpostorBounds & {meshes: Mesh[]})[],
-  { renderer = null, frameSize = 128, views = TREE_VIEWS }: {renderer?: WebGLRenderer | null, frameSize?: number, views?: ViewCounts} = {},
+  variants: (ImpostorBounds & {meshes: Mesh[], centre?: Vector3})[],
+  { renderer = null, frameSize = 128, views = TREE_VIEWS, fullSphere = false }:
+    {renderer?: WebGLRenderer | null, frameSize?: number, views?: ViewCounts, fullSphere?: boolean} = {},
 ): ImpostorAtlas {
   return withBakeRenderer(renderer, (r) => {
     const { yaws, elevations } = views;
@@ -209,41 +220,57 @@ export function bakeImpostors(
     const uView = { value: new Vector3() };
     const basic = new Map();
     const normals = new Map();
+    const alphaTest = (m) => fullSphere && m.transparent ? Math.max(ALPHA_CUT, m.alphaTest) : m.alphaTest;
     const albedo = (m) => {
       if (!basic.has(m)) {
-        const b = new MeshBasicMaterial({ map: m.map, color: m.color, vertexColors: m.vertexColors, side: m.side, alphaTest: m.alphaTest });
+        const b = new MeshBasicMaterial({
+          map: m.map ?? null, color: m.color ?? 0xffffff, vertexColors: m.vertexColors, side: m.side,
+          alphaTest: alphaTest(m), opacity: m.opacity, visible: m.visible && (!fullSphere || m.colorWrite),
+        });
         if (m.userData.billboard) { b.onBeforeCompile = injectBillboard; b.customProgramCacheKey = () => 'leaf-card-basic'; }
         basic.set(m, b);
       }
       return basic.get(m);
     };
     const normalOf = (m) => {
+      if (normals.has(m)) return normals.get(m);
       const defines: any = {};
-      if (!m.flatShading) defines.SMOOTH = '';
-      if (m.map && m.alphaTest > 0) defines.CUTOUT = '';
+      if (fullSphere ? m.flatShading === false : !m.flatShading) defines.SMOOTH = '';
+      if (m.map && alphaTest(m) > 0) defines.CUTOUT = '';
       if (m.userData.billboard) defines.BILLBOARD = '';
-      const key = `${m.side}:${Object.keys(defines).join(',')}:${'CUTOUT' in defines ? `${m.map.uuid}:${m.alphaTest}` : ''}`;
-      if (!normals.has(key)) {
-        normals.set(key, new ShaderMaterial({
-          vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, defines, side: m.side,
-          uniforms: { uView, uMap: { value: m.map }, uAlphaTest: { value: m.alphaTest } },
-        }));
-      }
-      return normals.get(key);
+      if (m.map?.matrixAutoUpdate) m.map.updateMatrix();
+      const normal = new ShaderMaterial({
+        vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, defines, side: m.side, visible: m.visible && (!fullSphere || m.colorWrite),
+        uniforms: {
+          uView, uMap: { value: m.map }, uMapTransform: { value: m.map?.matrix },
+          uAlphaTest: { value: alphaTest(m) }, uOpacity: { value: m.opacity },
+        },
+      });
+      normals.set(m, normal);
+      return normal;
     };
     const groups = variants.map(({ meshes }) => meshes.map((src) => {
-      const color = new Mesh(src.geometry, albedo(src.material));
-      const normal = new Mesh(src.geometry, normalOf(src.material));
+      const color = new Mesh(src.geometry, Array.isArray(src.material) ? src.material.map(albedo) : albedo(src.material));
+      const normal = new Mesh(src.geometry, Array.isArray(src.material) ? src.material.map(normalOf) : normalOf(src.material));
+      if (fullSphere) {
+        for (const mesh of [color, normal]) {
+          mesh.matrixAutoUpdate = false;
+          mesh.matrix.copy(src.matrix);
+        }
+      }
       color.frustumCulled = normal.frustumCulled = false;
       scene.add(color, normal);
       return { color, normal };
     }));
 
     const saved = {
-      target: r.getRenderTarget(), tone: r.toneMapping, autoClear: r.autoClear, clearAlpha: r.getClearAlpha(), clearColor: r.getClearColor(new Color()),
+      target: r.getRenderTarget(), cubeFace: r.getActiveCubeFace(), mipLevel: r.getActiveMipmapLevel(),
+      tone: r.toneMapping, autoClear: r.autoClear, autoClearColor: r.autoClearColor, autoClearDepth: r.autoClearDepth,
+      xr: r.xr.enabled, clearAlpha: r.getClearAlpha(), clearColor: r.getClearColor(new Color()),
     };
     r.toneMapping = NoToneMapping;
-    r.autoClear = true;
+    r.autoClear = r.autoClearColor = r.autoClearDepth = true;
+    r.xr.enabled = false;
     const centre = new Vector3();
     const dir = new Vector3();
     try {
@@ -257,11 +284,12 @@ export function bakeImpostors(
             m.normal.visible = pass === 'normal' && gi === vi;
           }));
           centre.set(0, v.centreY, 0);
+          if (v.centre) centre.copy(v.centre);
           const R = v.radius;
           Object.assign(camera, { left: -R, right: R, top: R, bottom: -R, near: R * 0.01, far: R * 4 });
           camera.updateProjectionMatrix();
           for (let e = 0; e < elevations; e++) {
-            const el = (e / (elevations - 1)) * Math.PI / 2;
+            const el = (e / (elevations - 1) - (fullSphere ? 0.5 : 0)) * (fullSphere ? Math.PI : Math.PI / 2);
             for (let y = 0; y < yaws; y++) {
               const a = (y / yaws) * Math.PI * 2;
               const idx = (vi * elevations + e) * yaws + y;
@@ -269,7 +297,9 @@ export function bakeImpostors(
               dir.set(Math.sin(a) * Math.cos(el), Math.sin(el), Math.cos(a) * Math.cos(el));
               camera.position.copy(centre).addScaledVector(dir, R * 2);
               // Straight above, "up" is the limit of the side views' up for this yaw, so the picture turns with the yaw.
-              if (e === elevations - 1) camera.up.set(-Math.sin(a), 0, -Math.cos(a)); else camera.up.set(0, 1, 0);
+              if (e === elevations - 1) camera.up.set(-Math.sin(a), 0, -Math.cos(a));
+              else if (fullSphere && e === 0) camera.up.set(Math.sin(a), 0, Math.cos(a));
+              else camera.up.set(0, 1, 0);
               camera.lookAt(centre);
               camera.updateMatrixWorld();
               uView.value.copy(dir);
@@ -294,9 +324,12 @@ export function bakeImpostors(
         means,
       };
     } finally {
-      r.setRenderTarget(saved.target);
+      r.setRenderTarget(saved.target, saved.cubeFace, saved.mipLevel);
       r.toneMapping = saved.tone;
       r.autoClear = saved.autoClear;
+      r.autoClearColor = saved.autoClearColor;
+      r.autoClearDepth = saved.autoClearDepth;
+      r.xr.enabled = saved.xr;
       r.setClearColor(saved.clearColor, saved.clearAlpha);
       colorTarget.dispose();
       normalTarget.dispose();
@@ -371,30 +404,49 @@ function impostorMesh(
   trees?: { variants: ImpostorBounds[], shared: TreeUniforms, color: Color },
 ) {
   const material = new MeshStandardMaterial({ color: atlas ? 0xffffff : trees?.color, roughness: 1, metalness: 0, side: DoubleSide });
+  configureImpostorMaterial(material, atlas, camera, trees);
+  const mesh = new Mesh(geometry, material);
+  mesh.frustumCulled = false; // the shader positions the quads; plant instances are culled before they're packed
+  return mesh;
+}
+
+export function modelImpostorQuad(atlas: ImpostorAtlas, centre: Vector3, radius: number) {
+  const geometry = new PlaneGeometry(1, 1);
+  geometry.boundingSphere = new Sphere(centre.clone(), Math.SQRT2 * radius);
+  const material = new MeshStandardMaterial({ roughness: 1, side: DoubleSide });
+  configureImpostorMaterial(material, atlas, undefined, undefined, { centre, radius });
+  return { geometry, material };
+}
+
+function configureImpostorMaterial(
+  material: MeshStandardMaterial, atlas: ImpostorAtlas | null, camera?: CameraUniform,
+  trees?: { variants: ImpostorBounds[], shared: TreeUniforms, color: Color },
+  model?: { centre: Vector3, radius: number },
+) {
   const variantInfo = trees?.variants.map((v) => new Vector2(v.centreY, v.radius));
   const { yaws, elevations } = atlas?.views ?? TREE_VIEWS;
   const defines = `#define IMP_YAWS ${yaws}.0\n#define IMP_ELEVS ${elevations}.0\n`
-    + (variantInfo ? `#define IMP_VARIANTS ${variantInfo.length}\n` : '#define IMP_PLANTS\n')
+    + (model ? '#define IMP_MODEL\n' : variantInfo ? `#define IMP_VARIANTS ${variantInfo.length}\n` : '#define IMP_PLANTS\n')
     + (atlas ? '#define IMP_ATLAS\n' : '');
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, {
-      uForestCam: camera,
       uImpGrid: { value: new Vector2(atlas?.cols ?? 1, atlas?.rows ?? 1) },
       uImpColor: { value: atlas?.color ?? null }, uImpNormal: { value: atlas?.normal ?? null },
     });
+    if (model) Object.assign(shader.uniforms, {
+      uImpCentre: { value: model.centre }, uImpRadius: { value: model.radius },
+    });
+    else shader.uniforms.uForestCam = camera;
     if (trees) Object.assign(shader.uniforms, {
       uForestRange: trees.shared.range, uForestScale: trees.shared.scale, uImpVariants: { value: variantInfo },
     });
     shader.vertexShader = `${defines}${IMPOSTOR_VERT_PARS}${shader.vertexShader.replace('#include <begin_vertex>', IMPOSTOR_VERT)}`;
     shader.fragmentShader = `${defines}${FADE_PARS}${IMPOSTOR_FRAG_PARS}${shader.fragmentShader
-      .replace('#include <clipping_planes_fragment>', `${fadeTest(trees ? 'uForestRange' : 'vImpRange')}\n#include <clipping_planes_fragment>`)
+      .replace('#include <clipping_planes_fragment>', `${model ? '' : fadeTest(trees ? 'uForestRange' : 'vImpRange')}\n#include <clipping_planes_fragment>`)
       .replace('#include <map_fragment>', IMPOSTOR_MAP)
       .replace('#include <normal_fragment_begin>', IMPOSTOR_NORMAL)}`;
   };
-  material.customProgramCacheKey = () => `forest-impostor:${variantInfo?.length ?? 'plants'}:${yaws}:${elevations}:${!!atlas}`;
-  const mesh = new Mesh(geometry, material);
-  mesh.frustumCulled = false; // the shader positions the quads; plant instances are culled before they're packed
-  return mesh;
+  material.customProgramCacheKey = () => `impostor:${model ? 'model' : variantInfo?.length ?? 'plants'}:${yaws}:${elevations}:${!!atlas}`;
 }
 
 const INSTANCE_STRIDE = 12;
@@ -462,6 +514,10 @@ export class PlantImpostorBatch {
 }
 
 const IMPOSTOR_VERT_PARS = /* glsl */ `
+#ifdef IMP_MODEL
+uniform vec3 uImpCentre;
+uniform float uImpRadius;
+#else
 attribute vec4 iPos;
 uniform vec3 uForestCam;
 #ifdef IMP_PLANTS
@@ -475,6 +531,7 @@ uniform vec4 uForestRange;
 uniform vec2 uImpVariants[IMP_VARIANTS];
 #endif
 varying float vForestDist;
+#endif
 varying vec2 vImpUv;
 varying vec4 vImpFrames;
 varying vec2 vImpBlend;
@@ -494,6 +551,16 @@ vImpN0 = vec3(1.0, 0.0, 0.0);
 vImpN1 = vec3(0.0, 1.0, 0.0);
 vImpN2 = vec3(0.0, 0.0, 1.0);
 {
+#ifdef IMP_MODEL
+  mat4 worldToLocal = inverse(modelMatrix);
+  vec3 centre = uImpCentre;
+  vec3 f = isOrthographic
+    ? mat3(worldToLocal) * vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2])
+    : (worldToLocal * vec4(cameraPosition, 1.0)).xyz - centre;
+  float radius = uImpRadius;
+  float yaw = 0.0;
+  float variant = 0.0;
+#else
   float scale = iPos.w;
 #ifdef IMP_PLANTS
   // Match fadeMaterial's world-space distance to the plant's base.
@@ -513,17 +580,21 @@ vImpN2 = vec3(0.0, 0.0, 1.0);
 #endif
     vec3 centre = iPos.xyz + vec3(0.0, info.x * scale, 0.0);
     vec3 f = uForestCam - centre;
+    float radius = info.y * scale;
+    float yaw = iMeta.x;
+    float variant = iMeta.y;
+#endif
     float fl = length(f);
     f = fl > 1e-5 ? f / fl : vec3(0.0, 0.0, 1.0);
     vec3 right = cross(vec3(0.0, 1.0, 0.0), f);
     float rl = length(right);
     right = rl > 1e-4 ? right / rl : vec3(1.0, 0.0, 0.0);
     vec3 up = cross(f, right);
-    transformed = centre + (right * position.x + up * position.y) * (2.0 * info.y * scale);
+    transformed = centre + (right * position.x + up * position.y) * (2.0 * radius);
 
     // Direction to the camera in the tree's own frame picks the pictures.
-    float c = cos(iMeta.x);
-    float s = sin(iMeta.x);
+    float c = cos(yaw);
+    float s = sin(yaw);
     vec3 l = vec3(c * f.x - s * f.z, f.y, s * f.x + c * f.z);
     // At the pole the +X billboard right corresponds to a +Z view in forest space.
     vec2 horizontal = rl > 1e-4 ? l.xz : vec2(-s, c);
@@ -532,16 +603,22 @@ vImpN2 = vec3(0.0, 0.0, 1.0);
     float fy = az / (6.28318531 / IMP_YAWS);
     float y0 = mod(floor(fy), IMP_YAWS);
     float y1 = mod(y0 + 1.0, IMP_YAWS);
+#ifdef IMP_MODEL
+    float fe = (asin(clamp(l.y, -1.0, 1.0)) / 3.14159265 + 0.5) * (IMP_ELEVS - 1.0);
+#else
     float fe = asin(clamp(l.y, 0.0, 1.0)) / (1.57079633 / (IMP_ELEVS - 1.0));
+#endif
     float e0 = min(floor(fe), IMP_ELEVS - 2.0);
-    float base = iMeta.y * IMP_ELEVS + e0;
+    float base = variant * IMP_ELEVS + e0;
     vImpFrames = vec4(base * IMP_YAWS + y0, base * IMP_YAWS + y1, (base + 1.0) * IMP_YAWS + y0, (base + 1.0) * IMP_YAWS + y1);
     vImpBlend = vec2(fract(fy), clamp(fe - e0, 0.0, 1.0));
     mat3 m = normalMatrix * mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c);
     vImpN0 = m[0];
     vImpN1 = m[1];
     vImpN2 = m[2];
+#ifndef IMP_MODEL
   }
+#endif
 }
 `;
 
@@ -579,7 +656,7 @@ vec3 impNormal = vec3(0.0, 0.0, 1.0);
   // smooth quad uv keep the GPU from treating that jump as minification (tiny mips).
   vec2 gx = dFdx(vImpUv) / uImpGrid;
   vec2 gy = dFdy(vImpUv) / uImpGrid;
-#ifdef IMP_PLANTS
+#if defined(IMP_PLANTS) || defined(IMP_MODEL)
   bool nextYaw = forestDither(gl_FragCoord.xy + vec2(23.0, 13.0)) < vImpBlend.x;
   vec2 uv = impUv(nextYaw ? fb : fa);
   vec4 texel = textureGrad(uImpColor, uv, gx, gy);
