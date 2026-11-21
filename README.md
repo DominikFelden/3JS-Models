@@ -115,10 +115,10 @@ Branched trees grow somewhat taller and wider than the simple tree (up to ~7 uni
 | 4 | + more wall towers, 2 halls in the courtyard |
 | 5 | + 4 halls and the most wall towers (about 35 towers, 30 wall pieces, ~8k vertices, 4 draw calls) |
 
-Castles are deliberately asymmetric: wall corners are pushed outwards by random amounts (the front wall and gates stay on the `+Z` axis), towers differ in radius, height and style (conical roof or battlements), wall segments differ in height, and the keep has an off-centre door, a stair turret (`turret` collider) and a banner. Walls, towers and the keep carry merlons. Hall sizes/positions, window placement and stone and roof colours are random too. The gates (at `x = 0` on the `+Z` side of both rings) are never blocked; halls keep clear of the path to the keep.
+Castles are deliberately asymmetric: wall corners are pushed outwards by random amounts (the front wall and gates stay on the `+Z` axis), towers differ in radius, height and style (conical roof or battlements), wall segments differ in height, and the keep has an off-centre door, a stair turret (`turret` collider) and a banner. Merlons have separate colliders so the gaps between them stay open. Hall sizes/positions, window placement and stone and roof colours are random too. The gates (at `x = 0` on the `+Z` side of both rings) are open below their lintels; halls keep clear of the path to the keep.
 
 ### Windows
-Houses and castles have windows: recessed glass in a wooden frame with a mullion, transom and sill (arched in castles, optional shutters on houses, about a quarter lit warmly). Doors have planks, iron straps, a surround and a step (visual only; `addDoor()`). They are part of the single merged mesh. Their data is exposed in world space:
+Houses and castles have windows: recessed glass in a wooden frame with a mullion, transom and sill (arched in castles, optional shutters on houses, about a quarter lit warmly). Doors have planks, iron straps, a surround and a collidable step (`doorstep`). They are part of the merged geometry. Window data is exposed in world space:
 ```js
 castle.getWindows(); // [{ position:[x,y,z], normal:[x,y,z], width, height }, ...]
 ```
@@ -130,7 +130,7 @@ new House({ type: 'cottage' });    // 3.5 x 3 footprint, pyramid roof
 new House({ type: 'longhouse' });  // 2.8 x 6, gable roof, ridge along Z
 new House({ type: 'towerhouse' }); // 2.4 x 2.4, 5 high, pyramid roof, two window rows
 ```
-Proportions, wall and roof colours and window layout vary per instance. The door is on the `+Z` side. Colliders: `body` (box) and `roof` (convex hull). The door is not a gap in the collider.
+Proportions, wall and roof colours and window layout vary per instance. The door is on the `+Z` side. Colliders include the solid `body`, the shaped `roof`, separate `chimney` shaft and cap boxes, the foundation and doorstep, and balcony floors and rails when present. The door is not a gap in the body collider.
 
 ### Cleaning up
 Trees, houses and castles own merged geometries (shared unit geometries are never freed). Call `model.dispose()` when you permanently remove one, e.g. when the viewer rebuilds a model. Not calling it only leaks memory; it never breaks rendering. Textures and their materials are shared by all models and are not freed by `dispose()`; call `disposeTextures()` when a whole world is discarded.
@@ -247,6 +247,8 @@ Sizes include the model's and ancestors' uniform scale. Call `getColliders()` ag
 **Simple vs. complex models.** A simple cylinder (e.g. a trunk) needs only position, rotation and radius. A complex object such as a castle is *decomposed into many simple primitives*: each tower is a cylinder, each wall a rotated box, the keep a box. The gate is a real gap between two wall boxes, so a character can pass it. Use the tags (every model has them) to treat e.g. roofs differently (ignore them, or use them as triggers). Rocks expose a convex hull instead, which fits the GJK/SAT style of collision checks.
 
 `StylizedTree` uses separate cylinders for the trunk and branches and one small convex hull per opaque blob instead of a single `crown` collider. Leaf cards are visual only. Filter by `trunk` for trunk-only collision, add `branch` for limbs, and include `foliage` if the clumps should collide. The other procedural tree models retain their `crown` proxies.
+
+The temple exposes three `base` tiers at their actual tread heights. Its `roof` colliders follow the gable, the sloping tile panels, and the ridge; they don't fill the air above the eaves. The shrine uses several thin hulls to follow the curve of its roof. Windmill `sail` and `sail-spar` colliders follow `setSailAngle()` and `animate()`; read them again after rotating the sails.
 
 ## Adding a model
 1. Subclass `WorldModel` in `src/models/`, call `super(name, options)`.

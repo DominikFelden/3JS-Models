@@ -58,7 +58,11 @@ function curvedRoof(w: number, d: number, h: number, lift: number) {
     }
     return out;
   };
-  return { top: trianglesGeometry(tris(false)), under: trianglesGeometry(tris(true), true) };
+  const top = tris(false), under = tris(true);
+  // One thin hull per grid cell keeps the curved eaves without filling the air below.
+  const cells = [];
+  for (let i = 0; i < top.length; i += 2) cells.push([...top[i], ...top[i + 1], ...under[i], ...under[i + 1]]);
+  return { top: trianglesGeometry(top), under: trianglesGeometry(under, true), cells };
 }
 
 /**
@@ -66,7 +70,7 @@ function curvedRoof(w: number, d: number, h: number, lift: number) {
  * lit windows and a crooked pointed hat roof topped by a glowing orb.
  *
  * Options: seed, height (default 9, 5..16), radius (default 1.6), glow (orb, default true).
- * Colliders: 'tower' cylinder, 'roof' cone.
+ * Colliders: tower, plinth, balconies, cornice, offset roof and optional orb.
  */
 export class WizardTower extends WorldModel {
   declare height: any;
@@ -85,21 +89,28 @@ export class WizardTower extends WorldModel {
     const lean = this.rand(-0.12, 0.12);
     b.add(cylG(), stone, { position: [0, H / 2, 0], scale: [R, H, R], grime: true, tint: this.rand(0.9, 1.05) });
     b.add(cylG(), stone, { position: [0, 0.25, 0], scale: [R * 1.2, 0.5, R * 1.2], tint: 0.9 });
+    this.addShape('cylinder', { radius: R * 1.2, height: 0.5 }, [0, 0.25, 0], null, 'plinth');
     const floors = Math.max(2, Math.floor(H / 3));
     for (let i = 1; i <= floors; i++) {
       const y = (H * i) / (floors + 1);
       const a = this.rand(0, Math.PI * 2);
       b.add(boxG(), lamp, { position: [Math.cos(a) * R * 0.98, y, Math.sin(a) * R * 0.98], scale: [0.3, 0.55, 0.3], yaw: -a });
       b.add(cylG(), stone, { position: [0, y + 1.2, 0], scale: [R * 1.1, 0.15, R * 1.1], tint: 0.85 });
+      this.addShape('cylinder', { radius: R * 1.1, height: 0.15 }, [0, y + 1.2, 0], null, 'balcony-floor');
     }
     b.add(cylG(), stone, { position: [0, H + 0.1, 0], scale: [R * 1.35, 0.3, R * 1.35] });
+    this.addShape('cylinder', { radius: R * 1.35, height: 0.3 }, [0, H + 0.1, 0], null, 'cornice');
     const roofH = H * 0.45;
     b.add(coneG(), roofMat, { position: [lean * 2, H + 0.25 + roofH / 2, 0], scale: [R * 1.3, roofH, R * 1.3] });
     b.add(boxG(), stone, { position: [R * 0.6, 0.8, R * 0.98], scale: [0.7, 1.6, 0.3], tint: 0.7 });
-    if (glow) b.add(sphG(), lamp, { position: [lean * 2, H + 0.25 + roofH + 0.15, 0], scale: [0.22, 0.22, 0.22] });
+    if (glow) {
+      const position = [lean * 2, H + 0.25 + roofH + 0.15, 0];
+      b.add(sphG(), lamp, { position, scale: [0.22, 0.22, 0.22] });
+      this.addShape('sphere', { radius: 0.22 }, position, null, 'orb');
+    }
     b.build(this);
     this.addShape('cylinder', { radius: R, height: H }, [0, H / 2, 0], null, 'tower');
-    this.addShape('cone', { radius: R * 1.3, height: roofH }, [0, H + 0.25 + roofH / 2, 0], null, 'roof');
+    this.addShape('cone', { radius: R * 1.3, height: roofH }, [lean * 2, H + 0.25 + roofH / 2, 0], null, 'roof');
   }
 }
 
@@ -109,7 +120,7 @@ export class WizardTower extends WorldModel {
  * tiled roof with pediments front and back.
  *
  * Options: seed, columns (per long side, default 6, 3..10), width (default 6), depth (default 9).
- * Colliders: 'base' box, 'column' cylinders, 'cella' box, 'roof' box.
+ * Colliders follow each base tier, column, and roof component.
  */
 export class Temple extends WorldModel {
   declare columns: any;
@@ -125,7 +136,9 @@ export class Temple extends WorldModel {
     const colH = 3.2, colR = 0.28, baseH = 0.6;
     for (let i = 0; i < 3; i++) {
       const g = 1.2 - i * 0.4;
-      b.add(boxG(), marble, { position: [0, 0.1 + i * 0.2, 0], scale: [width + g, 0.2, depth + g], tint: 0.86 + i * 0.05, grime: i === 0 });
+      const position = [0, 0.1 + i * 0.2, 0], size = [width + g, 0.2, depth + g];
+      b.add(boxG(), marble, { position, scale: size, tint: 0.86 + i * 0.05, grime: i === 0 });
+      this.addShape('box', { size }, position, null, 'base');
     }
     const pts: number[][] = [];
     const front = Math.max(3, Math.round(width / 1.6));
@@ -143,7 +156,11 @@ export class Temple extends WorldModel {
       b.add(cylG(), marble, { position: [x, baseH + 0.06, z], scale: [colR * 1.3, 0.12, colR * 1.3], tint: t * 0.95 });
       b.add(coneG(), marble, { position: [x, baseH + colH - 0.17, z], scale: [colR * 1.25, -0.14, colR * 1.25], tint: t });
       b.add(boxG(), marble, { position: [x, baseH + colH - 0.05, z], scale: [colR * 2.5, 0.1, colR * 2.5], tint: t * 1.03 });
-      this.addShape('cylinder', { radius: colR, height: colH }, [x, baseH + colH / 2, z], null, 'column');
+      this.addShape('cylinder', { radius: colR, height: colH - 0.34 }, [x, baseH + 0.12 + (colH - 0.34) / 2, z], null, 'column');
+      this.addShape('cylinder', { radius: colR * 1.3, height: 0.12 }, [x, baseH + 0.06, z], null, 'column-base');
+      this.addShape('cone', { radius: colR * 1.25, height: 0.14 }, [x, baseH + colH - 0.17, z],
+        new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI), 'capital');
+      this.addShape('box', { size: [colR * 2.5, 0.1, colR * 2.5] }, [x, baseH + colH - 0.05, z], null, 'capital');
     }
     const cw = width - 1.8, cd = depth - 1.8;
     b.add(boxG(), marble, { position: [0, baseH + colH / 2, -0.2], scale: [cw, colH, cd - 0.4], tint: 0.95 });
@@ -152,6 +169,8 @@ export class Temple extends WorldModel {
     b.add(boxG(), marble, { position: [0, baseH + 2.3, -0.2 + (cd - 0.4) / 2 + 0.04], scale: [1.5, 0.2, 0.08], tint: 1.05 });
     // Entablature: architrave, frieze with triglyphs, cornice.
     const ey = baseH + colH;
+    this.addShape('box', { size: [width, 0.6, depth] }, [0, ey + 0.3, 0], null, 'entablature');
+    this.addShape('box', { size: [width + 0.4, 0.12, depth + 0.4] }, [0, ey + 0.66, 0], null, 'cornice');
     b.add(boxG(), marble, { position: [0, ey + 0.15, 0], scale: [width, 0.3, depth], tint: 1.02 });
     b.add(boxG(), marble, { position: [0, ey + 0.45, 0], scale: [width - 0.04, 0.3, depth - 0.04], tint: 0.92 });
     const tri = material(0x8a8a90, true, true);
@@ -166,22 +185,30 @@ export class Temple extends WorldModel {
     b.add(boxG(), marble, { position: [0, ey + 0.66, 0], scale: [width + 0.4, 0.12, depth + 0.4], tint: 1.08 });
     // Gable roof: pediment prism (marble, recessed tympanum) and two tiled slopes along Z.
     const pedH = 1.1, ry = ey + 0.72, W = width + 0.4, half = W / 2;
+    const gx = (W - 0.1) / 2, gz = (depth + 0.3) / 2;
+    this.addShape('convex', { points: [
+      [-gx, ry, -gz], [gx, ry, -gz], [-gx, ry, gz], [gx, ry, gz],
+      [0, ry + pedH, -gz], [0, ry + pedH, gz],
+    ] }, [0, 0, 0], null, 'roof');
     b.add(prismG(), marble, { position: [0, ry, 0], scale: [W - 0.1, pedH, depth + 0.3], tint: 1.04 });
     for (const sz of [-1, 1]) {
       b.add(prismG(), material(0xc8c0b0, true, true), { position: [0, ry + 0.12, sz * (depth / 2 + 0.16)], scale: [W - 0.9, pedH - 0.32, 0.04] });
       b.add(cylG(), material(0xc9a24a, true, true), { position: [0, ry + pedH * 0.4, sz * (depth / 2 + 0.19)], scale: [0.25, 0.04, 0.25], quaternion: new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2) });
       b.add(boxG(), marble, { position: [0, ry + pedH + 0.12, sz * (depth / 2 + 0.2)], scale: [0.25, 0.3, 0.1] });
+      this.addShape('box', { size: [0.25, 0.3, 0.1] }, [0, ry + pedH + 0.12, sz * (depth / 2 + 0.2)], null, 'finial');
     }
     const slope = Math.atan2(pedH, half), len = Math.hypot(pedH, half) + 0.25;
     for (const sx of [-1, 1]) {
       const q = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), -sx * slope);
-      b.add(boxG(), roofMat, { position: [sx * (half / 2 + 0.08), ry + pedH / 2 + 0.08, 0], scale: [len, 0.12, depth + 0.7], quaternion: q });
+      const position = [sx * (half / 2 + 0.08), ry + pedH / 2 + 0.08, 0], size = [len, 0.12, depth + 0.7];
+      b.add(boxG(), roofMat, { position, scale: size, quaternion: q });
+      this.addShape('box', { size }, position, q, 'roof');
     }
-    b.add(cylG(), roofMat, { position: [0, ry + pedH + 0.06, 0], scale: [0.12, depth + 0.7, 0.12], quaternion: new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2), tint: 0.8 });
+    const ridge = [0, ry + pedH + 0.06, 0], ridgeRotation = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2);
+    b.add(cylG(), roofMat, { position: ridge, scale: [0.12, depth + 0.7, 0.12], quaternion: ridgeRotation, tint: 0.8 });
+    this.addShape('cylinder', { radius: 0.12, height: depth + 0.7 }, ridge, ridgeRotation, 'roof');
     b.build(this);
-    this.addShape('box', { size: [width + 1.2, baseH, depth + 1.2] }, [0, baseH / 2, 0], null, 'base');
     this.addShape('box', { size: [cw, colH, cd - 0.4] }, [0, baseH + colH / 2, -0.2], null, 'cella');
-    this.addShape('box', { size: [width + 0.4, 0.72 + pedH, depth + 0.4] }, [0, ey + (0.72 + pedH) / 2, 0], null, 'roof');
   }
 }
 
@@ -216,8 +243,11 @@ export class Obelisk extends WorldModel {
       b.add(taper, lamp, { position: [0, 0.7 + sh * 0.6, 0], scale: [w * 0.82, 0.25, w * 0.82] });
     }
     b.build(this);
-    this.addShape('box', { size: [w * 3.2, 0.7, w * 3.2] }, [0, 0.35, 0], null, 'plinth');
-    this.addShape('box', { size: [w * 1.5, height - 0.7, w * 1.5] }, [0, 0.7 + (height - 0.7) / 2, 0], null, 'shaft');
+    this.addShape('box', { size: [w * 3.2, 0.4, w * 3.2] }, [0, 0.2, 0], null, 'plinth');
+    this.addShape('box', { size: [w * 2.4, 0.3, w * 2.4] }, [0, 0.55, 0], null, 'plinth');
+    const foot = w * 0.9 * Math.SQRT1_2, head = foot * 0.7, shoulder = height - tip;
+    const ring = (r: number, y: number) => [[-r, y, -r], [-r, y, r], [r, y, -r], [r, y, r]];
+    this.addShape('convex', { points: [...ring(foot, 0.7), ...ring(head, shoulder), [0, height, 0]] }, [0, 0, 0], null, 'shaft');
   }
 }
 
@@ -394,7 +424,7 @@ export class Ruins extends WorldModel {
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
       // Half-sunk: the rubble rests on (and a little in) the ground.
       b.add(rockBlob(i % BLOB_VARIANTS, 1), rock, { position: [x, s * 0.2, z], scale: [s * 0.6, s * 0.5, s * 0.7], yaw: this.rand(0, 3), tint: mossy(s * 0.6, this.rand(0.7, 0.95)), detail: 3 });
-      if (i < 4) this.addShape('box', { size: [s, s * 0.8, s * 1.2] }, [x, s / 2, z], null, 'rubble');
+      this.addShape('box', { size: [s, s * 0.8, s * 1.2] }, [x, s / 2, z], null, 'rubble');
     }
     // Grass tufts growing between the stones.
     const grass = material(0x6f9a3c, true, true);
@@ -488,7 +518,7 @@ export class Gravestone extends WorldModel {
  * lanterns flank the steps.
  *
  * Options: seed, lit (glowing lanterns, default true).
- * Colliders: 'platform' box, 'post' cylinders, 'roof' box.
+ * Colliders include the stepped platform, altar, roof cells and stone lanterns.
  */
 export class Shrine extends WorldModel {
   constructor(options: any = {}) {
@@ -501,7 +531,11 @@ export class Shrine extends WorldModel {
     const b = new MergeBuilder();
     b.add(boxG(), stone, { position: [0, 0.15, 0], scale: [3, 0.3, 3], tint: 0.9, grime: true });
     b.add(boxG(), stone, { position: [0, 0.32, 0], scale: [2.7, 0.04, 2.7], tint: 1.05 });
-    for (let i = 0; i < 2; i++) b.add(boxG(), stone, { position: [0, 0.05 + i * 0.1, 1.6 + 0.25 - i * 0.18], scale: [1.4, 0.1 + i * 0.1, 0.5 - i * 0.14], tint: 0.85 + i * 0.05 });
+    for (let i = 0; i < 2; i++) {
+      const position = [0, 0.05 + i * 0.1, 1.85 - i * 0.18], size = [1.4, 0.1 + i * 0.1, 0.5 - i * 0.14];
+      b.add(boxG(), stone, { position, scale: size, tint: 0.85 + i * 0.05 });
+      this.addShape('box', { size }, position, null, 'step');
+    }
     const red = material(0xb8322a, true, true), dark = material(0x2a2220, true, true);
     for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       b.add(cylG(), stone, { position: [x * 0.9, 0.4, z * 0.9], scale: [0.18, 0.16, 0.18], tint: 0.95 });
@@ -515,6 +549,7 @@ export class Shrine extends WorldModel {
     }
     for (const x of [-0.9, 0.9]) b.add(boxG(), red, { position: [x, 2.05, 0], scale: [0.1, 0.14, 2.1] });
     b.add(boxG(), wood, { position: [0, 2.2, 0], scale: [2.3, 0.12, 2.3], tint: 0.85 });
+    this.addShape('box', { size: [2.3, 0.12, 2.3] }, [0, 2.2, 0], null, 'beam');
     // Sacred rope across the front with paper streamers.
     const rope = material(0xd8c08a, true, true);
     for (let i = 0; i < 6; i++) {
@@ -525,6 +560,8 @@ export class Shrine extends WorldModel {
     // Altar: plinth, offering box with a gold trim, a bowl, a glowing orb.
     b.add(boxG(), stone, { position: [0, 0.45, -0.55], scale: [1.3, 0.3, 0.8], tint: 0.95 });
     b.add(boxG(), wood, { position: [0, 0.85, -0.55], scale: [1.1, 0.5, 0.6], tint: 0.9 });
+    this.addShape('box', { size: [1.3, 0.3, 0.8] }, [0, 0.45, -0.55], null, 'altar');
+    this.addShape('box', { size: [1.16, 0.53, 0.66] }, [0, 0.865, -0.55], null, 'altar');
     b.add(boxG(), material(0xc9a24a, true, true), { position: [0, 1.11, -0.55], scale: [1.16, 0.04, 0.66] });
     b.add(boxG(), dark, { position: [0, 0.85, -0.24], scale: [0.6, 0.3, 0.02] });
     b.add(cylG(), material(0xd8d2c4, true, true), { position: [-0.3, 1.17, -0.5], scale: [0.12, 0.08, 0.12] });
@@ -534,9 +571,14 @@ export class Shrine extends WorldModel {
     const roof = curvedRoof(3.2, 3.2, 1.1 * this.rand(0.95, 1.1), 0.35);
     b.add(roof.top, roofMat, { position: [0, 2.28, 0], uv: 'world' });
     b.add(roof.under, wood, { position: [0, 2.28, 0], tint: 0.7, uv: 'world' });
+    for (const cell of roof.cells) {
+      const points = cell.map(([x, y, z]) => [x, y + 2.28, z]);
+      this.addShape('convex', { points }, [0, 0, 0], null, 'roof');
+    }
     roof.top.dispose(); roof.under.dispose();
     b.add(cylG(), dark, { position: [0, 2.28 + 1.05, 0], scale: [0.1, 0.25, 0.1] });
     b.add(sphG(), material(0xc9a24a, true, true), { position: [0, 2.28 + 1.25, 0], scale: [0.09, 0.12, 0.09] });
+    this.addShape('cylinder', { radius: 0.1, height: 0.45 }, [0, 2.28 + 1.145, 0], null, 'finial');
     // Stone lanterns (toro) on either side of the steps.
     const glow = lit ? this.ownSurface('plaster', 0xffc060, { glow: 0.9 }) : stone;
     for (const s of [-1, 1]) {
@@ -548,10 +590,12 @@ export class Shrine extends WorldModel {
       for (const cx of [-1, 1]) for (const cz of [-1, 1]) b.add(boxG(), stone, { position: [x + cx * 0.1, 0.77, z + cz * 0.1], scale: [0.04, 0.22, 0.04] });
       b.add(pyrG(), stone, { position: [x, 0.98, z], scale: [0.32, 0.2, 0.32] });
       b.add(sphG(), stone, { position: [x, 1.1, z], scale: [0.05, 0.06, 0.05] });
+      this.addShape('box', { size: [0.38, 0.12, 0.38] }, [x, 0.06, z], null, 'lantern');
+      this.addShape('cylinder', { radius: 0.07, height: 0.5 }, [x, 0.35, z], null, 'lantern');
+      this.addShape('box', { size: [0.3, 0.56, 0.3] }, [x, 0.88, z], null, 'lantern');
     }
     b.build(this);
     this.addShape('box', { size: [3, 0.3, 3] }, [0, 0.15, 0], null, 'platform');
-    this.addShape('box', { size: [2.6, 1.0, 2.6] }, [0, 2.7, 0], null, 'roof');
   }
 }
 

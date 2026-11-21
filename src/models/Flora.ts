@@ -189,6 +189,10 @@ export class Cactus extends WorldModel {
       arm.dispose();
       if (i % 2 === 0) b.add(ball(), bloom, { position: [ex, y + up - ar * 0.05, ez], scale: [ar * 0.6, ar * 0.4, ar * 0.6] });
       this.addShape('cylinder', { radius: ar, height: up }, [ex, y + up / 2, ez], null, 'arm');
+      for (let j = 0; j < 2; j++) {
+        const from = path[j], to = path[j + 1], dir = to.clone().sub(from);
+        this.addShape('cylinder', { radius: ar, height: dir.length() + ar }, from.clone().lerp(to, 0.5).toArray(), towards(dir), 'arm-joint');
+      }
     }
     for (let i = 0; i < 3; i++) {
       const a = i * 2.1;
@@ -219,7 +223,7 @@ function frondGeometry(len: number, droop: number) {
   return out;
 }
 
-/** PalmTree: curved, ringed trunk and a crown of arching, saw-leaved fronds. `height`, `fronds` (4-12), `coconuts`. Collider: trunk cylinder. */
+/** PalmTree: curved, ringed trunk and arching fronds. Colliders follow the trunk and crown base. */
 export class PalmTree extends WorldModel {
   constructor({ height = 4.5, fronds = 8, coconuts = true, ...o }: any = {}) {
     super('PalmTree', o);
@@ -230,11 +234,20 @@ export class PalmTree extends WorldModel {
     const off = (f: number) => [lean * f * f * height * 0.5, lean2 * f * f * height * 0.5];
     const path = [0, 0.25, 0.5, 0.75, 1].map((f) => new Vector3(off(f)[0], f * height, off(f)[1]));
     const top = [path[4].x, height, path[4].z];
-    const trunk = sweep(path, (t) => 0.21 - t * 0.08 + (t < 0.08 ? (0.08 - t) * 1.2 : 0), { radial: 9, steps: 18 });
+    const trunkRadius = (t: number) => 0.21 - t * 0.08 + (t < 0.08 ? (0.08 - t) * 1.2 : 0);
+    const trunk = sweep(path, trunkRadius, { radial: 9, steps: 18 });
+    const [flareX, flareZ] = off(0.08);
+    const colliderPath = [path[0], new Vector3(flareX, height * 0.08, flareZ), ...path.slice(1)];
+    for (let i = 1; i < colliderPath.length; i++) {
+      const from = colliderPath[i - 1], to = colliderPath[i], axis = to.clone().sub(from);
+      this.addShape('cylinder', { radius: trunkRadius(from.y / height), height: axis.length() },
+        from.clone().lerp(to, 0.5).toArray(), towards(axis), 'trunk');
+    }
     // Ringed bark: bands every ~0.25 units, darker in the grooves.
     b.add(trunk, bark, { tint: (_x, y) => 0.78 + 0.27 * Math.pow(Math.abs(Math.sin(y * Math.PI * 4)), 0.5), uv: 'native' });
     trunk.dispose();
     b.add(ball(), bark, { position: top, scale: [0.2, 0.16, 0.2], tint: 0.8 });
+    this.addShape('sphere', { radius: 0.2 }, top, null, 'crown-base');
     const leaf = material(0x4a9a3a, true, true);
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + this.rand(-0.15, 0.15), len = this.rand(1.7, 2.3);
@@ -254,7 +267,6 @@ export class PalmTree extends WorldModel {
       }
     }
     b.build(this);
-    this.addShape('cylinder', { radius: 0.17, height }, [top[0] / 2, height / 2, top[2] / 2], null, 'trunk');
   }
 }
 
@@ -514,7 +526,9 @@ export class Ship extends WorldModel {
       b.add(tube(), mast, { position: [x, deckY, 0], scale: [mw, mh * k, mw], uv: 'cyl' });
       for (const [fy, fw] of [[0.45, 0.8], [0.8, 0.6]]) {
         const yardY = deckY + mh * k * (fy + 0.18), sw = w * 1.3 * fw, sh = mh * k * 0.3;
-        b.add(tube(), mast, { position: [x, yardY, -sw * 0.55], scale: [mw * 0.6, sw * 1.1, mw * 0.6], quaternion: euler(Math.PI / 2, 0, 0) });
+        const rotation = euler(Math.PI / 2, 0, 0);
+        b.add(tube(), mast, { position: [x, yardY, -sw * 0.55], scale: [mw * 0.6, sw * 1.1, mw * 0.6], quaternion: rotation });
+        this.addShape('cylinder', { radius: mw * 0.6, height: sw * 1.1 }, [x, yardY, 0], rotation, 'yard');
         const sg = sailGeometry(sw, sh, sw * 0.12, 1.08);
         b.add(sg, sail, { position: [x + mw * 1.2, yardY - mw * 0.5, 0], tint: this.rand(0.95, 1.05), uv: 'face' });
         sg.dispose();
@@ -524,6 +538,7 @@ export class Ship extends WorldModel {
         const ny = deckY + mh * k * 0.88;
         b.add(shared('flora:nest', () => new CylinderGeometry(1, 0.8, 1, 10, 1, true)), wood, { position: [x, ny, 0], scale: [mw * 4, mw * 3, mw * 4], uv: 'cyl' });
         b.add(tube(), wood, { position: [x, ny - mw * 1.5, 0], scale: [mw * 3.6, mw * 0.4, mw * 3.6] });
+        this.addShape('cylinder', { radius: mw * 4, height: mw * 3 }, [x, ny, 0], null, 'crows-nest');
       }
       const flag = sailGeometry(mw * 4, mw * 10, mw * 0.8, 0.2);
       b.add(flag, material(0xb03030, true, true), { position: [x, deckY + mh * k + mw * 4, 0], quaternion: euler(Math.PI / 2, 0, -Math.PI / 2) });
@@ -535,7 +550,7 @@ export class Ship extends WorldModel {
         const d = head.clone().sub(foot);
         b.add(tube(), rope, { position: foot.toArray(), scale: [mw * 0.12, d.length(), mw * 0.12], quaternion: towards(d) });
       }
-      this.addShape('cylinder', { radius: mw, height: mh }, [x, deckY + mh / 2, 0], null, 'mast');
+      this.addShape('cylinder', { radius: mw, height: mh * k }, [x, deckY + mh * k / 2, 0], null, 'mast');
     }
     // Bowsprit with a stay to the foremast.
     const bowTip = h.edge(1, 0);

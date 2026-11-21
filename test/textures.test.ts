@@ -143,10 +143,11 @@ const SHAPES = {
   'LeafTree 15 c2': [() => new LeafTree({ seed: 15, complexity: 2 }), [-1.8928, -0.05, -2.1455, 2.3322, 5.4443, 2.0795], 31],
   'Bush 16': [() => new Bush({ seed: 16 }), [-1.0407, -0.5364, -1.0407, 1.0407, 1.545, 1.0407], 1],
   'Rock 17': [() => new Rock({ seed: 17 }), [-0.7693, -0.1299, -0.7429, 0.7814, 0.7838, 0.6963], 1],
-  'House cottage 18': [() => new House({ seed: 18, type: 'cottage' }), [-2.6747, -1.63, -2.6747, 2.6747, 3.8709, 2.6747], 2],
-  'House longhouse 19': [() => new House({ seed: 19, type: 'longhouse' }), [-3.3442, -2.255, -3.3442, 3.3442, 4.4334, 3.3442], 2],
-  'House towerhouse 20': [() => new House({ seed: 20, type: 'towerhouse' }), [-3.1183, -0.6429, -3.1183, 3.1183, 7.0065, 3.1183], 2],
-  'Castle 21 c2': [() => new Castle({ seed: 21, complexity: 2 }), [-13.9376, -3.2618, -11.7606, 14.1058, 7.6016, 8.8803], 34],
+  // Updated for chimney, balcony, foundation, doorstep and castle battlement colliders.
+  'House cottage 18': [() => new House({ seed: 18, type: 'cottage' }), [-2.6747, -2.3831, -2.6747, 2.6747, 5.7401, 2.6747], 7],
+  'House longhouse 19': [() => new House({ seed: 19, type: 'longhouse' }), [-3.3442, -3.0721, -3.3442, 3.3442, 5.3813, 3.8206], 6],
+  'House towerhouse 20': [() => new House({ seed: 20, type: 'towerhouse' }), [-3.3114, -1.819, -3.1183, 3.1183, 8.1121, 3.1183], 30],
+  'Castle 21 c2': [() => new Castle({ seed: 21, complexity: 2 }), [-13.9376, -3.2618, -11.7606, 14.1058, 7.6016, 8.8803], 118],
   'Wall 22': [() => new Wall({ seed: 22 }), [-2.367, -1.117, -2.367, 2.367, 3.617, 2.367], 1],
   'Roof 23': [() => new Roof({ seed: 23 }), [-2.75, 0, -2.2, 2.75, 1.8, 2.2], 1], // tighter convex collider
   'Column 24': [() => new Column({ seed: 24 }), [-1.5297, -0.0297, -1.5297, 1.5297, 3.0297, 1.5297], 1],

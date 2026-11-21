@@ -1,4 +1,4 @@
-import { BoxGeometry, ConeGeometry, Shape, ExtrudeGeometry } from 'three';
+import { BoxGeometry, ConeGeometry, Shape, ExtrudeGeometry, Quaternion, Vector3 } from 'three';
 import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.ts';
 
 /** Available house types (value of the `type` option). */
@@ -55,7 +55,7 @@ const SPECS = {
  * of floors, proportions, window layout, chimney, timber framing and
  * balconies on upper floors.
  *
- * Colliders: [body box, roof convex hull]. Tags: 'body', 'roof'.
+ * Colliders include the body, roof, chimney, and balcony parts when present.
  * Windows: see `getWindows()`; they are not colliders.
  */
 export class House extends WorldModel {
@@ -105,7 +105,9 @@ export class House extends WorldModel {
         [-ow / 2, h, -od / 2], [ow / 2, h, -od / 2], [ow / 2, h, od / 2], [-ow / 2, h, od / 2],
         [0, h + roofH, -od / 2], [0, h + roofH, od / 2],
       ] }, [0, 0, 0], null, 'roof');
+      this.addShape('box', { size: [0.12, 0.1, od] }, [0, h + roofH, 0], null, 'roof');
     }
+    this.addShape('box', { size: [w + 0.16, 0.4, d + 0.16] }, [0, 0.2, 0], null, 'foundation');
 
     // Door on +Z with a surround and step.
     const doorW = 0.8, doorH = 1.4;
@@ -114,8 +116,12 @@ export class House extends WorldModel {
 
     // Stone chimney rising through the roof on one side.
     const chX = (rnd() < 0.5 ? -1 : 1) * w * 0.25, chZ = (rnd() - 0.5) * d * 0.3;
-    b.add(boxG(), stoneMat, { position: [chX, h + roofH * 0.75, chZ], scale: [0.45, roofH * 1.1, 0.45], tint: warm() });
-    b.add(boxG(), stoneMat, { position: [chX, h + roofH * 1.33, chZ], scale: [0.6, 0.1, 0.6], tint: 0.8 });
+    const shaftPosition = [chX, h + roofH * 0.75, chZ], shaftSize = [0.45, roofH * 1.1, 0.45];
+    const capPosition = [chX, h + roofH * 1.33, chZ], capSize = [0.6, 0.1, 0.6];
+    b.add(boxG(), stoneMat, { position: shaftPosition, scale: shaftSize, tint: warm() });
+    b.add(boxG(), stoneMat, { position: capPosition, scale: capSize, tint: 0.8 });
+    this.addShape('box', { size: shaftSize }, shaftPosition, null, 'chimney');
+    this.addShape('box', { size: capSize }, capPosition, null, 'chimney');
 
     // Timber framing: corner posts and a plate beam under the roof.
     if (timbered) {
@@ -166,14 +172,26 @@ export class House extends WorldModel {
   _balcony(b, at, yaw, mat, bw, depth) {
     const y = at[1] - 0.04;
     const F = (u, yy, n, sx, sy, sz) => this._facePart(b, boxG(), mat, at, yaw, [u, yy, n], [sx, sy, sz]);
+    const rotation = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw);
+    const collider = (tag, u, yy, n, size) => {
+      const position = new Vector3(u, yy, n).applyQuaternion(rotation).add(new Vector3(at[0], 0, at[2]));
+      this.addShape('box', { size }, position.toArray(), rotation, tag);
+    };
     F(0, y, depth / 2, bw, 0.08, depth);                       // floor slab
-    for (const sx of [-1, 1]) F(sx * (bw / 2 - 0.04), y - 0.2, 0.1, 0.06, 0.3, 0.06); // wall brackets
+    collider('balcony-floor', 0, y, depth / 2, [bw, 0.08, depth]);
+    for (const sx of [-1, 1]) {
+      F(sx * (bw / 2 - 0.04), y - 0.2, 0.1, 0.06, 0.3, 0.06);
+      collider('balcony-bracket', sx * (bw / 2 - 0.04), y - 0.2, 0.1, [0.06, 0.3, 0.06]);
+    }
     const n = Math.max(3, Math.round(bw / 0.28));
     for (let i = 0; i <= n; i++) F(-bw / 2 + 0.04 + (i / n) * (bw - 0.08), y + 0.3, depth - 0.04, 0.04, 0.55, 0.04); // front balusters
     F(0, y + 0.58, depth - 0.04, bw, 0.05, 0.07);               // front rail
+    collider('railing', 0, y + 0.315, depth - 0.04, [bw, 0.58, 0.07]);
     for (const sx of [-1, 1]) {
       F(sx * (bw / 2 - 0.04), y + 0.3, depth / 2, 0.04, 0.55, 0.04);
       F(sx * (bw / 2 - 0.04), y + 0.58, depth / 2, 0.07, 0.05, depth); // side rails
+      collider('railing', sx * (bw / 2 - 0.04), y + 0.58, depth / 2, [0.07, 0.05, depth]);
+      collider('balcony-post', sx * (bw / 2 - 0.04), y + 0.3, depth / 2, [0.04, 0.55, 0.04]);
     }
   }
 
