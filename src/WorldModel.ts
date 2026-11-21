@@ -429,9 +429,9 @@ export class WorldModel extends Group {
   }
 
   /**
-   * Door (visual only) on a wall face, `position` = centre of the door foot on
+   * Door on a wall face, `position` = centre of the door foot on
    * the wall surface. Planked leaf with iron straps and a handle, a framing
-   * surround, a stone step, and an optional round top.
+   * surround, a collidable stone step, and an optional round top.
    */
   addDoor(builder, position, yaw, width = 0.8, height = 1.5, opts: any = {}) {
     const { arched = false, frame = 0x8a857b, wood = 0x5a3b22 } = opts;
@@ -458,6 +458,9 @@ export class WorldModel extends Group {
     for (const f of [0.2, 0.75]) F(box, dark, 0, y0 + rh * f, 0.165, width, 0.07, 0.04); // iron straps
     F(box, dark, width * 0.32, y0 + height * 0.45, 0.19, 0.07, 0.07, 0.06);           // handle
     F(box, surround, 0, y0 + 0.04, 0.2, width + 0.5, 0.08, 0.4);                        // step
+    this.addShape('box', { size: [width + 0.5, 0.08, 0.4] },
+      [position[0] + Math.sin(yaw) * 0.2, y0 + 0.04, position[2] + Math.cos(yaw) * 0.2],
+      new Quaternion().setFromAxisAngle(_yAxis, yaw), 'doorstep');
     this._doors.push({ position: [...position], yaw, width, height });
   }
 

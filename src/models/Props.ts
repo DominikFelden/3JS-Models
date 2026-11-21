@@ -143,6 +143,7 @@ export class Chest extends WorldModel {
     const wood = this.surface('planks');
     const lidH = 0.2;
     b.add(box(), wood, { position: [0, height / 2, 0], scale: [width, height, depth], tint: this.rand(0.9, 1.05) });
+    this.addShape('box', { size: [width, height, depth] }, [0, height / 2, 0], null, 'chest');
     for (const x of [-0.3, 0.3]) b.add(box(), iron(), { position: [x * width, height / 2, 0], scale: [0.06, height + 0.02, depth + 0.02] });
     for (const x of [-1, 1]) for (const z of [-1, 1]) {
       b.add(box(), iron(), { position: [x * (width / 2 - 0.03), 0.06, z * (depth / 2 - 0.03)], scale: [0.08, 0.12, 0.08] });
@@ -150,7 +151,18 @@ export class Chest extends WorldModel {
     b.add(box(), iron(), { position: [0, height - 0.02, 0], scale: [width + 0.02, 0.04, depth + 0.02] });
     // Domed lid: half cylinder along X (radius = half the depth, flattened to lidH), hinged at the back.
     const lid = (q, at) => {
-      b.add(halfCyl(), wood, { position: at(0), scale: [width + 0.02, lidH, depth / 2 + 0.01], quaternion: q });
+      const position = at(0), scale = [width + 0.02, lidH, depth / 2 + 0.01];
+      const geometry = halfCyl();
+      b.add(geometry, wood, { position, scale, quaternion: q });
+      const vertices = geometry.attributes.position;
+      const points = new Map<string, number[]>();
+      const lidScale = new Vector3(...scale), lidCenter = new Vector3(...position);
+      for (let i = 0; i < vertices.count; i++) {
+        const point = new Vector3().fromBufferAttribute(vertices, i).multiply(lidScale)
+          .applyQuaternion(q).add(lidCenter).toArray();
+        points.set(point.join(','), point);
+      }
+      this.addShape('convex', { points: [...points.values()] }, [0, 0, 0], null, 'lid');
       for (const x of [-0.3, 0.3]) b.add(halfBand(), iron(), { position: at(x * width), scale: [0.07, lidH + 0.015, depth / 2 + 0.025], quaternion: q });
       for (const x of [-1, 1]) b.add(halfBand(), iron(), { position: at(x * (width / 2 - 0.02)), scale: [0.05, lidH + 0.012, depth / 2 + 0.02], quaternion: q });
     };
@@ -171,7 +183,6 @@ export class Chest extends WorldModel {
       }
     }
     b.build(this);
-    this.addShape('box', { size: [width, height + (open ? 0.1 : lidH), depth] }, [0, (height + (open ? 0.1 : lidH)) / 2, 0], null, 'chest');
   }
 }
 
