@@ -1,7 +1,8 @@
 // @ts-nocheck -- tests poke at untyped internals and three.js object subtypes
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { SimpleTree } from '../src/index.ts';
+import { Group, Quaternion, Vector3 } from 'three';
+import { Balcony, SimpleTree, Stairs, WorldModel } from '../src/index.ts';
 
 test('SimpleTree instances share geometries and materials', () => {
   const a = new SimpleTree();
@@ -14,6 +15,56 @@ test('SimpleTree instances share geometries and materials', () => {
 import { PineTree, OakTree, Bush, Rock, Castle } from '../src/index.ts';
 
 const near = (a, b) => Math.abs(a - b) < 1e-6;
+
+test('composites expose nested primitive and convex colliders in tag order', () => {
+  const root = new WorldModel('Root', { position: [10, 0, 0], size: 2 });
+  const wrapper = new Group();
+  wrapper.position.y = 1;
+  const part = new WorldModel('Part', { position: [1, 0, 0], size: 3, rotation: Math.PI / 2 });
+  const rock = new Rock({ seed: 17, position: [0, 0, 1] });
+  const originalRockPoints = rock.getColliders()[0].points;
+  root.addShape('sphere', { radius: 1 }, [0, 0, 0], null, 'root');
+  part.addShape('box', { size: [1, 2, 3] }, [1, 0, 0], null, 'part');
+  root.add(wrapper);
+  wrapper.add(part);
+  part.add(rock);
+
+  const [, box, hull] = root.getColliders();
+  assert.deepStrictEqual(root.getColliderTags(), ['root', 'part', 'convex']);
+  assert.deepStrictEqual(box.size, [6, 12, 18]);
+  assert.ok(new Vector3(...box.position).distanceTo(new Vector3(12, 2, -6)) < 1e-6);
+  const worldX = new Vector3(1, 0, 0).applyQuaternion(new Quaternion(...box.quaternion));
+  assert.ok(worldX.distanceTo(new Vector3(0, 0, -1)) < 1e-6);
+  for (let i = 0; i < originalRockPoints.length; i++) {
+    const [x, y, z] = originalRockPoints[i];
+    assert.ok(new Vector3(...hull.points[i]).distanceTo(new Vector3(12 + z * 6, 2 + y * 6, -x * 6)) < 1e-6);
+  }
+  assert.deepStrictEqual(root.getColliders().slice(1), part.getColliders());
+  wrapper.position.y += 3;
+  assert.ok(near(root.getColliders()[1].position[1], 8));
+  part.removeFromParent();
+  assert.deepStrictEqual(root.getColliderTags(), ['root']);
+  assert.equal(root.getColliders().length, 1);
+});
+
+test('Balcony has three oriented rails without filling the deck; stair shapes follow each tread', () => {
+  const balcony = new Balcony({ width: 3, depth: 2 });
+  const tags = balcony.getColliderTags();
+  const rails = balcony.getColliders().filter((_, i) => tags[i] === 'railing');
+  assert.equal(rails.length, 3);
+  const deckCenter = new Vector3(0, 2.5, 1);
+  for (const rail of rails) {
+    const local = deckCenter.clone().sub(new Vector3(...rail.position))
+      .applyQuaternion(new Quaternion(...rail.quaternion).invert());
+    assert.ok(Math.abs(local.z) > rail.size[2] / 2, 'rail does not block the deck center');
+  }
+  const stairs = new Stairs({ steps: 3, rise: 0.2, run: 0.4 }).getColliders();
+  assert.equal(stairs.length, 3);
+  stairs.forEach(({ position, size }, i) => {
+    assert.ok(near(position[2], -i * 0.4));
+    assert.ok(near(position[1] + size[1] / 2, (i + 1) * 0.2));
+  });
+});
 
 test('position, size and rotation are applied to colliders', () => {
   const t = new OakTree({ position: [10, 0, 5], size: 2 });
@@ -47,7 +98,6 @@ test('bounds are finite for all models', () => {
   assert.ok([new PineTree(), new Bush()].every((m) => m.getColliders().length > 0));
 });
 
-import { Quaternion, Vector3 } from 'three';
 import { House, HOUSE_TYPES, MAX_TREE_COMPLEXITY, MAX_CASTLE_COMPLEXITY } from '../src/index.ts';
 
 const count = (m, tag) => m.getColliderTags().filter((t) => t === tag).length;
@@ -310,7 +360,7 @@ test('registry is grouped by category, sorted alphabetically, starts with Styliz
     assert.ok(group.length > 0, category);
     assert.deepStrictEqual(group, [...group].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true })));
   }
-  for (const m of models.filter((x) => x.name !== 'SimpleTree')) {
+  for (const m of models) {
     const model = m.create({ complexity: 1 });
     assert.ok(model.getColliders().length > 0, m.name);
     const { min, max } = model.getBounds();
@@ -452,7 +502,8 @@ const triangles = (t) => t.children.reduce((n, m) => n + (m.geometry.index ? m.g
 test('StylizedTree: cheap blob core plus billboard leaf cards; lower complexities keep the same crown', () => {
   const full = new StylizedTree({ seed: 9, complexity: 4 });
   const mid = new StylizedTree({ seed: 9, complexity: 2 });
-  assert.deepStrictEqual(full.getColliderTags(), ['trunk', 'crown']);
+  assert.equal(count(full, 'branch'), 3);
+  assert.ok([6, 7].includes(count(full, 'foliage')));
   assert.ok(mid.cardCount > 20 && mid.cardCount < full.cardCount, 'complexity sets the number of cards');
   assert.strictEqual(cardMesh(new StylizedTree({ seed: 9, complexity: 0 })), undefined, 'complexity 0: blobs only');
   const a = cardMesh(full).geometry.attributes.cardCenter.array, b = cardMesh(mid).geometry.attributes.cardCenter.array;
@@ -595,7 +646,8 @@ test('StylizedTree 5 and 6 branch out into clumped crowns; lowPoly keeps the sha
   const low = new StylizedTree({ seed: 9, complexity: 6, lowPoly: true });
   for (const t of [five, six, low]) {
     assert.ok(t.children.length <= 3, 'still 3 draw calls');
-    assert.deepStrictEqual(t.getColliderTags(), ['trunk', 'crown']);
+    assert.equal(count(t, 'foliage'), t._clumps.length);
+    assert.equal(count(t, 'branch'), t._branches.length - Number(t.leader));
     assert.deepStrictEqual(t.crown, one.crown, 'same crown envelope as the single-crown tree');
   }
   assert.ok(five._subCrowns.length >= 3 && six._subCrowns.length === 2 * five._subCrowns.length, 'limbs, then two twigs per limb');
@@ -610,6 +662,31 @@ test('StylizedTree 5 and 6 branch out into clumped crowns; lowPoly keeps the sha
   const all = centres(six);
   assert.ok([...centres(low)].every((c) => all.has(c)), 'lowPoly cards are a subset of the full ones');
   [one, five, six, low].forEach((t) => t.dispose());
+});
+
+test('StylizedTree branch cylinders span their limbs and foliage hulls follow clump centers', () => {
+  const tree = new StylizedTree({ seed: 9, complexity: 8, leader: false });
+  const byTag = (tag) => tree.getColliders().filter((_, i) => tree.getColliderTags()[i] === tag);
+  const branchColliders = byTag('branch');
+  assert.equal(branchColliders.length, tree._branches.length);
+  branchColliders.forEach((collider, i) => {
+    assert.equal(collider.type, 'cylinder');
+    const { from, to } = tree._branches[i];
+    const center = new Vector3(...collider.position);
+    const axis = new Vector3(0, collider.height / 2, 0).applyQuaternion(new Quaternion(...collider.quaternion));
+    assert.ok(center.clone().sub(axis).distanceTo(from) < 1e-6);
+    assert.ok(center.clone().add(axis).distanceTo(to) < 1e-6);
+  });
+  const foliage = byTag('foliage');
+  assert.equal(foliage.length, tree._clumps.length);
+  foliage.forEach((collider, i) => {
+    assert.equal(collider.type, 'convex');
+    assert.equal(collider.points.length, 12);
+    const center = new Vector3();
+    for (const point of collider.points) center.add(new Vector3(...point));
+    assert.ok(center.divideScalar(collider.points.length).distanceTo(tree._clumps[i].center) < 1e-6);
+  });
+  assert.ok(!tree.getColliderTags().includes('crown'));
 });
 
 test('StylizedTree 7..10: L-system twigs add crowns and cards, same crown envelope', () => {

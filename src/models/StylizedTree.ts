@@ -96,8 +96,8 @@ const ellipsoidNormal = (p, c, r, out) => out.set((p.x - c.x) / r.x ** 2, (p.y -
  * whether the trunk continues through the crown. Options as the other trees:
  * trunkHeight, trunkThickness, leafSize (card size factor), trunkColor, leafColor.
  *
- * Colliders: [trunk cylinder, crown sphere] (tags 'trunk', 'crown'), enough
- * for physics; `crown` holds the crown ellipsoid { center, radii }.
+ * Colliders: 'trunk' and 'branch' cylinders and a 'foliage' hull per blob.
+ * `crown` holds the overall crown ellipsoid { center, radii }.
  */
 export class StylizedTree extends WorldModel {
   declare complexity: any;
@@ -145,25 +145,43 @@ export class StylizedTree extends WorldModel {
     // Branched trees split at the trunk top (`forkY`): every limb grows out of it.
     const forkY = H * 0.9;
     const trunkTop = branched ? forkY : H + radii.y * 0.5;
+    this.addShape('cylinder', { radius: 0.26 * tw, height: trunkTop }, [0, trunkTop / 2, 0], null, 'trunk');
+    this.addShape('cylinder', { radius: 0.42 * tw, height: 0.4 }, [0, 0.2, 0], null, 'trunk');
     b.add(shared('stylized:trunk', () => new CylinderGeometry(0.16, 0.26, 1, 7)), bark, { position: [0, trunkTop / 2, 0], scale: [tw, trunkTop, tw] });
     b.add(shared('stylized:flare', () => new CylinderGeometry(0.24, 0.42, 0.4, 7)), bark, { position: [0, 0.2, 0], scale: [tw, 1, tw] });
     // lowPoly limbs drop the end caps: bases sit inside the parent, tips end in a knot or a clump.
     const limb = shared(this.lowPoly ? 'stylized:limbOpen' : 'stylized:limb', () => { const g = new CylinderGeometry(0.6, 1, 1, 5, 1, this.lowPoly); g.translate(0, 0.5, 0); return g; });
     this._branches = [];
-    const branch = (from, to, r) => {
+    const branch = (from, to, r, tag = 'branch') => {
       const d = to.clone().sub(from);
       if (d.lengthSq() < 1e-8) return;
       this._branches.push({ from: from.clone(), to: to.clone(), r });
-      b.add(limb, bark, { position: from.toArray(), quaternion: new Quaternion().setFromUnitVectors(Y, d.clone().normalize()), scale: [r, d.length(), r] });
+      const height = d.length();
+      const rotation = new Quaternion().setFromUnitVectors(Y, d.clone().normalize());
+      b.add(limb, bark, { position: from.toArray(), quaternion: rotation, scale: [r, height, r] });
+      this.addShape('cylinder', { radius: r, height }, from.clone().lerp(to, 0.5).toArray(), rotation, tag);
     };
     const blob1 = shared('stylized:blob', () => new IcosahedronGeometry(1, 1));
     const blob0 = shared('stylized:blob0', () => new IcosahedronGeometry(1, 0));
     const blob = this.lowPoly ? blob0 : blob1;
+    const foliageHull = blob0.userData.hull ??= (() => {
+      const vertices = blob0.attributes.position;
+      const unique = new Map<string, Vector3>();
+      for (let i = 0; i < vertices.count; i++) {
+        const point = new Vector3().fromBufferAttribute(vertices, i);
+        unique.set(point.toArray().join(','), point);
+      }
+      return [...unique.values()];
+    })();
     // Rounded bark knot that hides the flat cut of a branch where it splits.
     const knot = (at, r, smooth = false) => b.add(smooth && !this.lowPoly ? blob1 : blob0, bark, { position: at.toArray(), scale: [r, r * 0.9, r] });
-    const addBlob = (center, r, tint, yaw = 0) => b.add(blob, core, { position: center.toArray(), scale: r.toArray(), yaw, tint });
+    const addBlob = (center, r, tint, yaw = 0) => {
+      b.add(blob, core, { position: center.toArray(), scale: r.toArray(), yaw, tint });
+      // A compact hull for each opaque core; individual leaf cards are visual only.
+      const points = foliageHull.map((point: Vector3) => point.clone().multiply(r).applyAxisAngle(Y, yaw).add(center).toArray());
+      this.addShape('convex', { points }, [0, 0, 0], null, 'foliage');
+    };
     const a0 = rnd() * Math.PI * 2;
-    this.addShape('cylinder', { radius: 0.26 * tw, height: H }, [0, H / 2, 0], null, 'trunk');
 
     // Leaf clumps: { center, radii, n (cards) or size (card size) }. Each has a small dark core blob
     // deep inside a shell of leaf cards, so from every side (also from below and above) only leaves show.
@@ -182,7 +200,8 @@ export class StylizedTree extends WorldModel {
       for (let i = 0; i < 3; i++) {
         const a = a0 + (i / 3) * Math.PI * 2 + (rnd() - 0.5) * 0.6;
         const dir = new Vector3(Math.cos(a) * 0.8, 1, Math.sin(a) * 0.8).normalize();
-        b.add(limb, bark, { position: [0, H * this.rand(0.8, 0.95), 0], quaternion: new Quaternion().setFromUnitVectors(Y, dir), scale: [0.09 * tw, radii.y * 0.95, 0.09 * tw] });
+        const from = new Vector3(0, H * this.rand(0.8, 0.95), 0);
+        branch(from, from.clone().addScaledVector(dir, radii.y * 0.95), 0.09 * tw);
       }
       const n = Math.ceil(needed(radii) * STYLIZED_COVER[Math.min(this.complexity, 4)] * (this.lowPoly ? LOW_POLY_COVER : 1));
       const deep = coreScale(STYLIZED_COVER[Math.min(this.complexity, 4)]), dark = n > 0 ? 0.2 : 0;
@@ -245,7 +264,7 @@ export class StylizedTree extends WorldModel {
       } else {
         // The trunk itself ends in the top clump: no bare leader sticks out of the crown.
         const top = C.clone().add(new Vector3(0, 0.45 * radii.y, 0));
-        branch(new Vector3(0, splitY - 0.05 * tw, 0), top, splitR * 0.95);
+        branch(new Vector3(0, splitY - 0.05 * tw, 0), top, splitR * 0.95, 'trunk');
         clump(top, radii.clone().multiplyScalar(0.5), 0.45, a0);
       }
     }
@@ -289,7 +308,6 @@ export class StylizedTree extends WorldModel {
       mesh.castShadow = mesh.receiveShadow = false;
       this.add(mesh);
     }
-    this.addShape('sphere', { radius: Math.max(radii.x, radii.y, radii.z) }, C.toArray(), null, 'crown');
   }
 
   /**
@@ -313,6 +331,7 @@ export class StylizedTree extends WorldModel {
     for (let i = 0; i < tiers; i++) {
       const y = ys[i], t = i / (tiers - 1); // 0 = lowest tier .. 1 = highest
       b.add(seg, bark, { position: [0, y, 0], scale: [r, ys[i + 1] - y, r] });
+      this.addShape('cylinder', { radius: r, height: ys[i + 1] - y }, [0, (y + ys[i + 1]) / 2, 0], null, 'trunk');
       const k = this.random() < 0.35 ? 3 : 2;
       let len = 0;
       for (let j = 0; j < k; j++) {

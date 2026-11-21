@@ -327,19 +327,32 @@ export class WorldModel extends Group {
    * Geometric info in world space. Each entry:
    * { type, position:[x,y,z], quaternion:[x,y,z,w], ...dimensions }
    * Dimensions are already multiplied by `size`. Convex shapes return
-   * world-space `points` and an identity quaternion.
+   * world-space `points` and an identity quaternion. Own shapes come first,
+   * followed by those of descendant WorldModels in scene-graph order.
    */
   getColliders() {
     this.updateWorldMatrix(true, false);
-    this.matrixWorld.decompose(_p, _pq, _s);
+    const colliders: ReturnType<WorldModel['_ownColliders']> = [];
+    this.traverse((node) => {
+      if (!(node instanceof WorldModel) || !node._shapes.length) return;
+      if (node !== this) node.updateWorldMatrix(true, false);
+      for (const collider of node._ownColliders()) colliders.push(collider);
+    });
+    return colliders;
+  }
+
+  private _ownColliders() {
+    const orientation = new Quaternion();
+    const origin = new Vector3();
+    this.matrixWorld.decompose(origin, orientation, _s);
     const k = _s.x; // uniform scale
     return this._shapes.map(({ type, data, position, rotation }) => {
       if (type === 'convex') {
         const points = data.points.map((pt) => new Vector3(...pt).applyMatrix4(this.matrixWorld).toArray());
-        return { type, position: this.getWorldPosition(new Vector3()).toArray(), quaternion: [0, 0, 0, 1], points };
+        return { type, position: origin.toArray(), quaternion: [0, 0, 0, 1], points };
       }
       const pos = new Vector3(...position).applyMatrix4(this.matrixWorld);
-      const q = _pq.clone();
+      const q = orientation.clone();
       if (rotation) q.multiply(rotation);
       const out: any = { type, position: pos.toArray(), quaternion: q.toArray() };
       if (data.radius !== undefined) out.radius = data.radius * k;
@@ -351,7 +364,11 @@ export class WorldModel extends Group {
 
   /** Labels matching the order of getColliders(). */
   getColliderTags() {
-    return this._shapes.map((s) => s.tag);
+    const tags: string[] = [];
+    this.traverse((node) => {
+      if (node instanceof WorldModel) for (const shape of node._shapes) tags.push(shape.tag);
+    });
+    return tags;
   }
 
   /**
