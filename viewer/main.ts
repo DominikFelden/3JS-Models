@@ -1,9 +1,11 @@
 import {
   Scene, PerspectiveCamera, WebGLRenderer, Color, Box3, Vector3,
   HemisphereLight, DirectionalLight, Fog, CircleGeometry, MeshStandardMaterial, Mesh,
+  BoxGeometry, ConeGeometry, CylinderGeometry, SphereGeometry, MeshNormalMaterial,
   PCFSoftShadowMap, ACESFilmicToneMapping, SRGBColorSpace,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import { models } from '../src/registry.ts';
 import { bakeModelImpostor, Forest, type ModelImpostor } from '../src/index.ts';
 import { preloadTextures, getTexture, TEXTURE_VARIANTS } from '../src/textures/index.ts';
@@ -16,6 +18,9 @@ setToonShading({ enabled: params.get('toon') !== '0' });
 
 const scene = new Scene();
 scene.background = new Color(0xbfd9ee);
+const colliderScene = new Scene();
+colliderScene.background = scene.background;
+const colliderMaterial = new MeshNormalMaterial();
 const FOG = [80, 300]; // default; big scenes (forests) ask for more with `fog` in the registry
 scene.fog = new Fog(0xbfd9ee, ...FOG);
 const camera = new PerspectiveCamera(50, 1, 0.1, 6000);
@@ -84,9 +89,50 @@ const previewRow = document.getElementById('impostorPreviewRow');
 const previewToggle = document.querySelector<HTMLInputElement>('#impostorPreview');
 const previewDistance = document.querySelector<HTMLInputElement>('#impostorPreviewDistance');
 const previewStatus = document.getElementById('impostorPreviewStatus');
+const colliderToggle = document.querySelector<HTMLInputElement>('#showColliders');
 let previewAsset: ModelImpostor | null = null;
 let previewMesh: ReturnType<ModelImpostor['createMesh']> | null = null;
 const previewOrigin = new Vector3();
+
+type Collider = { position: [number, number, number]; quaternion: [number, number, number, number] } & (
+  | { type: 'box'; size: [number, number, number] }
+  | { type: 'cone' | 'cylinder'; radius: number; height: number }
+  | { type: 'sphere'; radius: number }
+  | { type: 'convex'; points: [number, number, number][] }
+);
+
+function createColliderMesh(collider: Collider) {
+  // Hull points are already in world space, so don't apply the collider transform again.
+  if (collider.type === 'convex') {
+    return new Mesh(new ConvexGeometry(collider.points.map((point) => new Vector3(...point))), colliderMaterial);
+  }
+  let geometry;
+  switch (collider.type) {
+    case 'box': geometry = new BoxGeometry(...collider.size); break;
+    case 'cone': geometry = new ConeGeometry(collider.radius, collider.height, 24); break;
+    case 'cylinder': geometry = new CylinderGeometry(collider.radius, collider.radius, collider.height, 24); break;
+    case 'sphere': geometry = new SphereGeometry(collider.radius, 24, 16); break;
+  }
+  const mesh = new Mesh(geometry, colliderMaterial);
+  mesh.position.fromArray(collider.position);
+  mesh.quaternion.fromArray(collider.quaternion);
+  return mesh;
+}
+
+function refreshPreview() {
+  clearImpostorPreview();
+  for (const mesh of colliderScene.children) {
+    if (mesh instanceof Mesh) mesh.geometry.dispose();
+  }
+  colliderScene.clear();
+  if (colliderToggle.checked) {
+    previewRow.hidden = true;
+    const colliders: Collider[] = current?.getColliders?.() ?? [];
+    for (const collider of colliders) colliderScene.add(createColliderMesh(collider));
+  } else {
+    buildImpostorPreview();
+  }
+}
 
 function clearImpostorPreview() {
   if (previewMesh) scene.remove(previewMesh);
@@ -127,10 +173,8 @@ function updateImpostorPreview() {
   if (previewStatus.textContent !== status) previewStatus.textContent = status;
 }
 
-previewToggle.addEventListener('change', () => {
-  clearImpostorPreview();
-  buildImpostorPreview();
-});
+previewToggle.addEventListener('change', refreshPreview);
+colliderToggle.addEventListener('change', refreshPreview);
 
 // Parameter values per model (kept when switching back) and the keys pinned below the 3D view.
 // A colour of `null` is "auto": the colours of the picked texture.
@@ -170,7 +214,7 @@ function show(reframe) {
   seed = current.seed; // later changes (sliders) modify this very model; Re-roll picks a new seed
   seedLabel.textContent = current.seed !== undefined ? `seed ${current.seed}` : '';
   scene.add(current);
-  buildImpostorPreview();
+  refreshPreview();
   paramsButton.style.display = defs().length || usedTextures().length ? '' : 'none';
   if (modal.style.display === 'flex') renderTextures();
   if (!reframe) return;
@@ -390,7 +434,7 @@ outlineBox.addEventListener('change', () => { outlines.enabled = outlineBox.chec
 const statsBox = document.getElementById('stats') as any;
 /** FPS and draw load, shown for models that report `stats` (Forest) to judge performance on a phone. */
 function showStats(fps) {
-  const st = current?.stats;
+  const st = colliderToggle.checked ? null : current?.stats;
   statsBox.style.display = st ? 'block' : 'none';
   if (!st) return;
   const { calls, triangles } = renderer.info.render;
@@ -410,16 +454,20 @@ async function start() {
   renderer.setAnimationLoop(() => {
     renderer.info.reset(); // count this frame's draw calls and triangles over all its render passes
     controls.update();
-    current?.update?.(camera); // models with levels of detail (Forest) choose what to draw
-    updateImpostorPreview();
-    outlines.render(scene, camera);
+    if (colliderToggle.checked) {
+      renderer.render(colliderScene, camera);
+    } else {
+      current?.update?.(camera); // models with levels of detail (Forest) choose what to draw
+      updateImpostorPreview();
+      outlines.render(scene, camera);
+    }
     frames++;
     const now = performance.now();
     if (now - since >= 500) {
       fps = Math.round(frames * 1000 / (now - since));
       frames = 0;
       since = now;
-      if (current?.autoDetail) current.adaptDetail(fps); // forests: fewer 3D trees while the frame rate is low
+      if (!colliderToggle.checked && current?.autoDetail) current.adaptDetail(fps);
       showStats(fps);
     }
   });
