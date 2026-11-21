@@ -1,10 +1,10 @@
 import {
-  Group,
   Mesh,
   CylinderGeometry,
   SphereGeometry,
 } from 'three';
 import { pooledMaterial } from '../textures/pool.ts';
+import { WorldModel } from '../WorldModel.ts';
 
 // Geometries and materials are created once and shared by all instances.
 let shared = null;
@@ -33,10 +33,9 @@ function getShared() {
  * Every instance shares the same geometries and the first bark and foliage
  * textures of the shared pool (use `OakTree` / `PineTree` for variety).
  */
-export class SimpleTree extends Group {
-  constructor() {
-    super();
-    this.name = 'SimpleTree';
+export class SimpleTree extends WorldModel {
+  constructor(options = {}) {
+    super('SimpleTree', options);
     const s = getShared();
 
     const trunk = new Mesh(s.trunkGeometry, s.trunkMaterial);
@@ -46,5 +45,7 @@ export class SimpleTree extends Group {
     leaves.scale.set(1.2, 1.2, 1.2);
 
     this.add(trunk, leaves);
+    this.addShape('cylinder', { radius: 0.3, height: 2 }, trunk.position.toArray(), null, 'trunk');
+    this.addShape('sphere', { radius: leaves.scale.x }, leaves.position.toArray(), null, 'foliage');
   }
 }

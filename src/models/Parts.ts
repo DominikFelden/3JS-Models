@@ -105,14 +105,23 @@ export class Roof extends WorldModel {
       b.add(g, tiles, { position: [0, height / 2, 0], scale: [width * 1.1, height, depth * 1.1] });
     } else if (type === 'flat') {
       b.add(box(), tiles, { position: [0, 0.15, 0], scale: [width, 0.3, depth] });
+      this.addShape('box', { size: [width, 0.3, depth] }, [0, 0.15, 0], null, 'roof');
       for (const [sx, sz, w, d] of [[0, 1, width, 0.15], [0, -1, width, 0.15], [1, 0, 0.15, depth], [-1, 0, 0.15, depth]]) {
-        b.add(box(), this.surface('stone'), { position: [sx * width / 2, 0.45, sz * depth / 2], scale: [w, 0.3, d] });
+        const position = [sx * width / 2, 0.45, sz * depth / 2], size = [w, 0.3, d];
+        b.add(box(), this.surface('stone'), { position, scale: size });
+        this.addShape('box', { size }, position, null, 'parapet');
       }
     } else {
       b.add(prism(), tiles, { position: [0, 0, 0], scale: [width * 1.1, height, depth * 1.1] });
     }
     b.build(this);
-    this.addShape('box', { size: [width, height, depth] }, [0, height / 2, 0], null, 'roof');
+    if (type !== 'flat') {
+      const x = width * 0.55, z = depth * 0.55;
+      const points = [[-x, 0, -z], [-x, 0, z], [x, 0, -z], [x, 0, z]];
+      if (type === 'hip') points.push([0, height, 0]);
+      else points.push([0, height, -z], [0, height, z]);
+      this.addShape('convex', { points }, [0, 0, 0], null, 'roof');
+    }
   }
 }
 
@@ -127,6 +136,7 @@ export class Chimney extends WorldModel {
     b.add(box(), material(0x1c1a19, true), { position: [0, height + 0.125, 0], scale: [width * 0.55, 0.02, width * 0.55] });
     b.build(this);
     this.addShape('box', { size: [width, height, width] }, [0, height / 2, 0], null, 'chimney');
+    this.addShape('box', { size: [width + 0.2, 0.12, width + 0.2] }, [0, height + 0.06, 0], null, 'cap');
   }
 }
 
@@ -138,10 +148,11 @@ export class Stairs extends WorldModel {
     const stone = this.surface('stone');
     for (let i = 0; i < steps; i++) {
       const h = rise * (i + 1);
-      b.add(box(), stone, { position: [0, h / 2, -i * run], scale: [width, h, run], tint: this.rand(0.93, 1.05) });
+      const position = [0, h / 2, -i * run], size = [width, h, run];
+      b.add(box(), stone, { position, scale: size, tint: this.rand(0.93, 1.05) });
+      this.addShape('box', { size }, position, null, 'stairs');
     }
     b.build(this);
-    this.addShape('box', { size: [width, rise * steps, run * steps] }, [0, rise * steps / 2, -(steps - 1) * run / 2], null, 'stairs');
   }
 }
 
@@ -159,7 +170,7 @@ export class Railing extends WorldModel {
       b.add(box(), wood, { position: [-length / 2 + (i * length) / n, height / 2, 0], scale: [0.04, height - 0.1, 0.04], tint: this.rand(0.9, 1.05) });
     }
     b.build(this);
-    this.addShape('box', { size: [length, height, 0.14] }, [0, height / 2, 0], null, 'railing');
+    this.addShape('box', { size: [length + 0.12, height + 0.04, 0.14] }, [0, (height + 0.04) / 2, 0], null, 'railing');
   }
 }
 
@@ -171,14 +182,21 @@ export class Balcony extends WorldModel {
     const stone = this.surface('stone');
     const wood = this.surface('planks');
     b.add(box(), stone, { position: [0, height, depth / 2], scale: [width, 0.15, depth] });
+    this.addShape('box', { size: [width, 0.15, depth] }, [0, height, depth / 2], null, 'floor');
     for (const x of [-width * 0.35, width * 0.35]) {
-      b.add(box(), stone, { position: [x, height - 0.3, depth * 0.35], scale: [0.2, 0.45, depth * 0.7] });
+      const position = [x, height - 0.3, depth * 0.35], size = [0.2, 0.45, depth * 0.7];
+      b.add(box(), stone, { position, scale: size });
+      this.addShape('box', { size }, position, null, 'corbel');
     }
-    b.add(box(), this.surface('plaster'), { position: [0, height / 2 + 0.6, -0.1], scale: [width + 0.6, height + 1.2, 0.2] });
+    const wallPosition = [0, height / 2 + 0.6, -0.1], wallSize = [width + 0.6, height + 1.2, 0.2];
+    b.add(box(), this.surface('plaster'), { position: wallPosition, scale: wallSize });
+    this.addShape('box', { size: wallSize }, wallPosition, null, 'wall');
     const rail = (x, z, len, yaw) => {
       const h = 0.95, base = height + 0.075;
       b.add(box(), wood, { position: [x, base + h, z], scale: [len, 0.07, 0.1], yaw });
-      const n = Math.round(len / 0.2);
+      const railHeight = h + 0.035;
+      this.addShape('box', { size: [len + 0.1, railHeight, 0.1] }, [x, base + railHeight / 2, z], new Quaternion().setFromAxisAngle(up(), yaw), 'railing');
+      const n = Math.max(1, Math.round(len / 0.2));
       for (let i = 0; i <= n; i++) {
         const t = -len / 2 + (i * len) / n;
         b.add(box(), wood, {
@@ -191,7 +209,6 @@ export class Balcony extends WorldModel {
     rail(-width / 2 + 0.05, depth / 2, depth, Math.PI / 2);
     rail(width / 2 - 0.05, depth / 2, depth, Math.PI / 2);
     b.build(this);
-    this.addShape('box', { size: [width, 0.15, depth] }, [0, height, depth / 2], null, 'floor');
   }
 }
 

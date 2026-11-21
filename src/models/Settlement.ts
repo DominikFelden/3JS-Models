@@ -28,7 +28,7 @@ function beam(b, mat, a, c, thick, opts: any = {}) {
 /**
  * Stone well with a timber roof. Base at y = 0, centred on the origin.
  * Options: `radius` (curb radius, 0.5..2, default 0.9), `roofed` (default true).
- * Colliders: 'curb' cylinder, plus 'post' boxes when roofed.
+ * Colliders: 'curb' cylinder, plus 'post', 'windlass' and 'roof' when roofed.
  */
 export class Well extends WorldModel {
   declare random: any;
@@ -48,11 +48,16 @@ export class Well extends WorldModel {
         b.add(boxG(), wood, { position: [s * (r - 0.05), h + ph / 2, 0], scale: [0.12, ph, 0.12] });
         this.addShape('box', { size: [0.12, ph, 0.12] }, [s * (r - 0.05), h + ph / 2, 0], null, 'post');
       }
-      b.add(cylG(), wood, { position: [0, h + ph - 0.35, 0], scale: [0.07, 2 * r, 0.07], quaternion: new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI / 2) }); // windlass
+      const windlassPosition = [0, h + ph - 0.35, 0];
+      const windlassRotation = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI / 2);
+      b.add(cylG(), wood, { position: windlassPosition, scale: [0.07, 2 * r, 0.07], quaternion: windlassRotation });
+      this.addShape('cylinder', { radius: 0.07, height: 2 * r }, windlassPosition, windlassRotation, 'windlass');
       b.add(cylG(), material(ROPE, true), { position: [0, h + ph - 0.7, 0], scale: [0.02, 0.7, 0.02] });
       b.add(cylG(), wood, { position: [0, h + ph - 1.1, 0], scale: [0.14, 0.2, 0.14] }); // bucket
       const rh = 0.8;
       b.add(pyramidG(), roof, { position: [0, h + ph + rh / 2, 0], scale: [(r + 0.35) / 0.7071, rh, 0.6 / 0.7071 * 1.0] });
+      const x = r + 0.35, y = h + ph, z = 0.6;
+      this.addShape('convex', { points: [[-x, y, -z], [x, y, -z], [x, y, z], [-x, y, z], [0, y + rh, 0]] }, [0, 0, 0], null, 'roof');
     }
     b.build(this);
   }
@@ -280,7 +285,7 @@ export class Fence extends WorldModel {
 /**
  * Signpost: a post with 1..4 pointer boards at random angles.
  * Options: `boards` (1..4, default 2), `height` (1.5..4, default 2.4).
- * Colliders: 'post' cylinder.
+ * Colliders: 'post' cylinder and a rotated box for each 'board'.
  */
 export class Signpost extends WorldModel {
   declare random: any;
@@ -292,15 +297,18 @@ export class Signpost extends WorldModel {
     const b = new MergeBuilder();
     b.add(boxG(), wood, { position: [0, H / 2, 0], scale: [0.14, H, 0.14], grime: true });
     b.add(pyramidG(), wood, { position: [0, H + 0.06, 0], scale: [0.12, 0.12, 0.12] });
+    this.addShape('cylinder', { radius: 0.1, height: H + 0.12 }, [0, (H + 0.12) / 2, 0], null, 'post');
     for (let i = 0; i < n; i++) {
       const y = H - 0.3 - i * 0.36;
       const yaw = this.rand(-0.6, 0.6) + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0);
       const len = this.rand(0.9, 1.3);
       b.add(boxG(), wood, { position: [Math.sin(yaw + Math.PI / 2) * len / 2 * 0 + Math.cos(yaw) * len / 2, y, -Math.sin(yaw) * len / 2], scale: [len, 0.26, 0.04], yaw, tint: this.rand(0.9, 1.1) });
       b.add(coneG(), wood, { position: [Math.cos(yaw) * (len + 0.1), y, -Math.sin(yaw) * (len + 0.1)], scale: [0.13, 0.2, 0.13], quaternion: new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), -Math.PI / 2).premultiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw)) });
+      this.addShape('box', { size: [len + 0.2, 0.26, 0.26] },
+        [Math.cos(yaw) * (len + 0.2) / 2, y, -Math.sin(yaw) * (len + 0.2) / 2],
+        new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw), 'board');
     }
     b.build(this);
-    this.addShape('cylinder', { radius: 0.1, height: H }, [0, H / 2, 0], null, 'post');
   }
 }
 
@@ -321,7 +329,7 @@ const rope = (b, a, c, t = 0.018) => beam(b, material(ROPE, true), a, c, t);
 /**
  * Market stall: counter, four poles, striped cloth awning and crates of goods, open on +Z.
  * Options: `width` (1.5..5, default 2.5), `awningColor` (hex; default random from seed).
- * Colliders: 'counter' box, 'awning' box (the canopy).
+ * Colliders: 'post', 'counter' and 'awning' boxes.
  */
 export class MarketStall extends WorldModel {
   declare random: any;
@@ -336,7 +344,9 @@ export class MarketStall extends WorldModel {
     // Poles (taller at the back so the awning sheds rain to the front) and beams.
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
       const hh = sz < 0 ? H + 0.4 : H;
-      b.add(boxG(), wood, { position: [sx * (w / 2 - 0.05), hh / 2, sz * (d / 2 - 0.05)], scale: [0.1, hh, 0.1], grime: true });
+      const position = [sx * (w / 2 - 0.05), hh / 2, sz * (d / 2 - 0.05)], size = [0.1, hh, 0.1];
+      b.add(boxG(), wood, { position, scale: size, grime: true });
+      this.addShape('box', { size }, position, null, 'post');
       b.add(boxG(), wood, { position: [sx * (w / 2 - 0.05), 0.03, sz * (d / 2 - 0.05)], scale: [0.18, 0.06, 0.18] });
     }
     for (const sz of [-1, 1]) {

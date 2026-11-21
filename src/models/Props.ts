@@ -290,22 +290,33 @@ export class Cart extends WorldModel {
     const wood = this.surface('planks');
     const dark = this.surface('bark', null, true, NO_BIRCH);
     const r = 0.45, floor = r;
+    const across = new Quaternion().setFromEuler(new Euler(Math.PI / 2, 0, 0));
+    const shaftRotation = new Quaternion().setFromEuler(new Euler(0, 0, Math.PI / 2 - 0.15));
+    const addCylinder = (tag: string, position: number[], radius: number, height: number, quaternion: Quaternion | null = null) => {
+      b.add(cyl(), dark, { position, scale: [radius, height, radius], quaternion, uv: tag === 'shaft' ? 'cyl' : null });
+      this.addShape('cylinder', { radius, height }, position, quaternion, tag);
+    };
     b.add(box(), wood, { position: [0, floor, 0], scale: [length, 0.08, width] });
+    this.addShape('box', { size: [length, 0.08, width] }, [0, floor, 0], null, 'bed');
     for (const z of [-1, 1]) {
       for (const y of [0.13, 0.3]) b.add(box(), wood, { position: [0, floor + y, z * (width / 2 - 0.03)], scale: [length, 0.12, 0.05], tint: y > 0.2 ? 0.95 : 0.85 });
       for (const x of [-0.48, 0, 0.48]) b.add(box(), dark, { position: [x * length, floor + 0.2, z * (width / 2 + 0.005)], scale: [0.06, 0.4, 0.05] });
+      this.addShape('box', { size: [length, 0.4, 0.085] }, [0, floor + 0.2, z * (width / 2 - 0.0125)], null, 'side');
     }
     for (const y of [0.13, 0.3]) b.add(box(), wood, { position: [-length / 2 + 0.03, floor + y, 0], scale: [0.05, 0.12, width], tint: 0.9 });
-    b.add(cyl(), dark, { position: [0, r, 0], scale: [0.04, width + 0.36, 0.04], quaternion: new Quaternion().setFromEuler(new Euler(Math.PI / 2, 0, 0)) });
+    this.addShape('box', { size: [0.05, 0.29, width] }, [-length / 2 + 0.03, floor + 0.215, 0], null, 'tailboard');
+    addCylinder('axle', [0, r, 0], 0.04, width + 0.36, across);
     for (const z of [-1, 1]) {
-      addWheel(b, wood, dark, [0, r, z * (width / 2 + 0.12)], r);
-      b.add(cyl(), dark, { position: [length / 2 + 0.4, floor - 0.12, z * (width / 2 - 0.1)], scale: [0.03, length * 0.45 + 0.7, 0.03], quaternion: new Quaternion().setFromEuler(new Euler(0, 0, Math.PI / 2 - 0.15)), uv: 'cyl' });
+      const wheel = [0, r, z * (width / 2 + 0.12)];
+      addWheel(b, wood, dark, wheel, r);
+      this.addShape('cylinder', { radius: r * 1.03 * 1.09, height: 0.12 }, wheel, across, 'wheel');
+      addCylinder('shaft', [length / 2 + 0.4, floor - 0.12, z * (width / 2 - 0.1)], 0.03, length * 0.45 + 0.7, shaftRotation);
     }
     // Crossbar between the shaft tips and a prop stick so the cart rests level.
     const tipX = length / 2 + 0.4 + (length * 0.45 + 0.7) / 2 * Math.cos(0.15) - 0.05;
     const tipY = floor - 0.12 - (length * 0.45 + 0.7) / 2 * Math.sin(0.15);
-    b.add(cyl(), dark, { position: [tipX, tipY, 0], scale: [0.025, width - 0.2, 0.025], quaternion: new Quaternion().setFromEuler(new Euler(Math.PI / 2, 0, 0)) });
-    b.add(cyl(), dark, { position: [tipX - 0.05, tipY / 2, 0], scale: [0.025, tipY, 0.025] });
+    addCylinder('crossbar', [tipX, tipY, 0], 0.025, width - 0.2, across);
+    addCylinder('support', [tipX - 0.05, tipY / 2, 0], 0.025, tipY);
     if (loaded) {
       const sack = this.surface('cloth', 0xc8b088, true, [0]);
       const rope = material(0x6a5432, true, true);
@@ -316,15 +327,15 @@ export class Cart extends WorldModel {
         const up = new Vector3(0, 1, 0).applyQuaternion(lean);
         b.add(sackBody(), sack, { position: p, scale: [s, s * 0.85, s * 0.9], quaternion: lean, tint: this.rand(0.85, 1.05), uv: 'sphere' });
         const at = (h: number) => [p[0] + up.x * s * h, p[1] + up.y * s * h, p[2] + up.z * s * h];
+        this.addShape('cylinder', { radius: s, height: s * 1.75 }, at(0.2), lean, 'cargo');
         b.add(cyl(), rope, { position: at(0.8), scale: [s * 0.16, 0.05, s * 0.16], quaternion: lean });
         b.add(shared('prop:tuft', () => new ConeGeometry(1, 1, 6, 1, true).rotateX(Math.PI)), sack, { position: at(0.95), scale: [s * 0.3, s * 0.25, s * 0.3], quaternion: lean });
       }
       b.add(barrelBody(), wood, { position: [length * 0.32, floor + 0.04 + 0.25, -width * 0.18], scale: [0.2, 0.5, 0.2], uv: 'cyl', tint: 0.9 });
+      this.addShape('cylinder', { radius: 0.2 * bulge(0.5) + 0.005, height: 0.5 }, [length * 0.32, floor + 0.29, -width * 0.18], null, 'cargo');
       for (const t of [0.15, 0.85]) b.add(tube(), iron(), { position: [length * 0.32, floor + 0.04 + t * 0.5, -width * 0.18], scale: [0.2 * bulge(t) + 0.005, 0.03, 0.2 * bulge(t) + 0.005] });
     }
     b.build(this);
-    this.addShape('box', { size: [length, 0.4, width] }, [0, floor + 0.15, 0], null, 'bed');
-    for (const z of [-1, 1]) this.addShape('cylinder', { radius: r, height: 0.1 }, [0, r, z * (width / 2 + 0.12)], new Quaternion().setFromEuler(new Euler(Math.PI / 2, 0, 0)), 'wheel');
   }
 }
 
@@ -408,7 +419,9 @@ export class Chair extends WorldModel {
     }
     b.build(this);
     this.addShape('box', { size: [s, 0.05, s] }, [0, seatHeight, 0], null, 'seat');
-    this.addShape('box', { size: [s, seatHeight, s] }, [0, seatHeight / 2, 0], null, 'legs');
+    for (const x of [-1, 1]) for (const z of [-1, 1]) {
+      this.addShape('box', { size: [0.05, seatHeight, 0.05] }, [x * (s / 2 - 0.03), seatHeight / 2, z * (s / 2 - 0.03)], null, 'leg');
+    }
     if (!stool) this.addShape('box', { size: [s, backH, 0.05] }, [0, seatHeight + backH / 2, -s / 2 + 0.03], null, 'back');
   }
 }
@@ -455,7 +468,11 @@ export class Bed extends WorldModel {
     b.add(halfCyl(), blanket, { position: [0, y0, z0 + 0.04], scale: [bw + 0.02, 0.035, 0.07], tint: 1.15 });
     b.add(box(), linen, { position: [0, y0 + 0.004, z0 - 0.06], scale: [width - 0.12, 0.012, 0.14], tint: 0.98 });
     b.build(this);
-    this.addShape('box', { size: [width, top + matH, length] }, [0, (top + matH) / 2, 0], null, 'mattress');
+    this.addShape('box', { size: [width, frameH + matH, length] }, [0, legH + (frameH + matH) / 2, 0], null, 'mattress');
     this.addShape('box', { size: [width, 0.8, 0.06] }, [0, 0.45, -length / 2 + 0.03], null, 'headboard');
+    this.addShape('box', { size: [width, 0.5, 0.06] }, [0, 0.3, length / 2 - 0.03], null, 'footboard');
+    for (const x of [-1, 1]) for (const z of [-1, 1]) {
+      this.addShape('box', { size: [0.08, legH, 0.08] }, [x * (width / 2 - 0.04), legH / 2, z * (length / 2 - 0.04)], null, 'leg');
+    }
   }
 }

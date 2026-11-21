@@ -36,6 +36,24 @@ test('Table colliders: four legs plus top; round has two', () => {
   assert.strictEqual(new P.Table({ seed: 1, round: true }).getColliders().length, 2);
 });
 
+test('Cart has separate tilted shafts and a crossbar, with open space between the shafts', () => {
+  const cart = new P.Cart({ length: 2, width: 1.4, loaded: false });
+  const tagged = (tag) => cart.getColliders().filter((_, i) => cart.getColliderTags()[i] === tag);
+  const shafts = tagged('shaft');
+  assert.equal(shafts.length, 2);
+  for (const [i, shaft] of shafts.entries()) {
+    assert.equal(shaft.type, 'cylinder');
+    assert.ok(Math.abs(shaft.position[2] - (i === 0 ? -0.6 : 0.6)) < 1e-6);
+    assert.ok(Math.abs(shaft.position[2]) > shaft.radius);
+    assert.ok(Math.abs(shaft.quaternion[2]) > 0.5);
+    assert.ok(shaft.position[0] + shaft.height / 2 > 2.1);
+  }
+  assert.equal(tagged('crossbar').length, 1);
+  assert.equal(tagged('support').length, 1);
+  assert.equal(tagged('cargo').length, 0);
+  assert.equal(new P.Cart({ loaded: true }).getColliderTags().filter((tag) => tag === 'cargo').length, 4);
+});
+
 test('Chair stool has no backrest', () => {
   const tags = (m) => m.getColliderTags();
   assert.ok(tags(new P.Chair({ seed: 1 })).includes('back'));

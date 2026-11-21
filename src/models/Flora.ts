@@ -293,13 +293,14 @@ export class Stump extends WorldModel {
   }
 }
 
-/** Log: a fallen trunk lying along X with ringed end grain, a broken branch stub and moss. `length`, `radius`. Collider: cylinder lying along X. */
+/** Log: a fallen trunk lying along X with ringed end grain, a broken branch stub and moss. `length`, `radius`. Colliders: trunk and optional branch. */
 export class Log extends WorldModel {
   constructor({ length = 2, radius = 0.25, ...o }: any = {}) {
     super('Log', o);
     const b = new MergeBuilder();
     const bark = this.surface('bark', null, true, NO_BIRCH);
     const q = euler(0, 0, Math.PI / 2);
+    this.addShape('cylinder', { radius, height: length }, [0, radius, 0], q, 'trunk');
     const ns = noiseSeed(this, 5);
     const body = sweep([new Vector3(length / 2, radius, 0), new Vector3(0, radius, 0), new Vector3(-length / 2, radius, 0)], (t) => radius * (1 + 0.08 * noise3(t * 4, 0, 0, ns)), { radial: 10, steps: 10 });
     b.add(body, bark, { tint: this.rand(0.9, 1.05), uv: 'native' });
@@ -311,15 +312,17 @@ export class Log extends WorldModel {
     }
     if (this.random() < 0.5) {
       const x = this.rand(-0.3, 0.3) * length;
-      b.add(tube(), bark, { position: [x, radius * 1.7, 0.05], scale: [radius * 0.3, radius * 0.6, radius * 0.3], quaternion: euler(0.5, 0, -0.3), tint: 0.9, uv: 'cyl' });
-      const end = new Vector3(0, radius * 0.6, 0).applyQuaternion(euler(0.5, 0, -0.3)).add(new Vector3(x, radius * 1.7, 0.05));
-      b.add(disc(), grain, { position: end.toArray(), scale: [radius * 0.3, 1, radius * 0.3], quaternion: euler(0.5, 0, -0.3), tint: 0.85 });
+      const start = new Vector3(x, radius * 1.7, 0.05), rotation = euler(0.5, 0, -0.3);
+      const branchLength = radius * 0.6, branchRadius = radius * 0.3;
+      b.add(tube(), bark, { position: start.toArray(), scale: [branchRadius, branchLength, branchRadius], quaternion: rotation, tint: 0.9, uv: 'cyl' });
+      const end = new Vector3(0, branchLength, 0).applyQuaternion(rotation).add(start);
+      b.add(disc(), grain, { position: end.toArray(), scale: [branchRadius, 1, branchRadius], quaternion: rotation, tint: 0.85 });
+      this.addShape('cylinder', { radius: branchRadius, height: branchLength }, start.lerp(end, 0.5).toArray(), rotation, 'branch');
     }
     if (this.random() < 0.6) {
       b.add(rockBlob(3, 0), this.surface('foliage', 0x4f7a3a), { position: [this.rand(-0.2, 0.2), radius * 1.75, this.rand(-0.1, 0.1)], scale: [length * 0.18, radius * 0.25, radius * 0.7], detail: 2 });
     }
     b.build(this);
-    this.addShape('cylinder', { radius, height: length }, [0, radius, 0], q);
   }
 }
 
@@ -401,7 +404,7 @@ function rail(b: MergeBuilder, mat: any, edge: (u: number, s: number) => Vector3
   g.dispose();
 }
 
-/** Rowboat: round-bilged plank hull with ribs, thwarts and two oars resting in their oarlocks. `length`, `oars`. Colliders: hull box, bow and stern boxes. */
+/** Rowboat: round-bilged plank hull with ribs, thwarts and two oars resting in their oarlocks. `length`, `oars`. Colliders: hull, bow, stern and optional oars. */
 export class Rowboat extends WorldModel {
   constructor({ length = 3, oars = true, ...o }: any = {}) {
     super('Rowboat', o);
@@ -427,6 +430,9 @@ export class Rowboat extends WorldModel {
       b.add(box(), planks, { position: [x * length, hh * 0.62, 0], scale: [0.2, 0.04, hw * 1.85], tint: 1.1 });
     }
     b.add(box(), planks, { position: [-length * 0.42, hh * 0.62, 0], scale: [length * 0.12, 0.04, h.half(0.08) * 1.7], tint: 1.05 });
+    this.addShape('box', { size: [length * 0.85, hh, w * 0.9] }, [0, hh / 2, 0], null, 'hull');
+    this.addShape('box', { size: [length * 0.2, hh, w * 0.5] }, [length * 0.5, hh / 2, 0], null, 'bow');
+    this.addShape('box', { size: [length * 0.1, hh, w * 0.6] }, [-length * 0.5, hh / 2, 0], null, 'stern');
     if (oars) {
       const wood = material(0x9a7448, true, true);
       for (const s of [-1, 1]) {
@@ -435,14 +441,16 @@ export class Rowboat extends WorldModel {
         // Oar: handle inside the boat, shaft through the oarlock, blade down at the waterline.
         const inner = new Vector3(lock.x - 0.25, hh * 0.75, -s * w * 0.05), blade = new Vector3(lock.x + 0.35, 0.02, s * (w * 0.5 + 1.0));
         const dir = blade.clone().sub(inner), len = dir.length();
-        b.add(tube(), wood, { position: inner.toArray(), scale: [0.022, len, 0.022], quaternion: towards(dir) });
-        b.add(box(), wood, { position: blade.clone().addScaledVector(dir.clone().normalize(), -0.15).toArray(), scale: [0.14, 0.35, 0.025], quaternion: towards(dir), tint: 0.9 });
+        const rotation = towards(dir);
+        const bladePosition = blade.clone().addScaledVector(dir.clone().normalize(), -0.15).toArray();
+        const bladeSize = [0.14, 0.35, 0.025];
+        b.add(tube(), wood, { position: inner.toArray(), scale: [0.022, len, 0.022], quaternion: rotation });
+        b.add(box(), wood, { position: bladePosition, scale: bladeSize, quaternion: rotation, tint: 0.9 });
+        this.addShape('cylinder', { radius: 0.022, height: len }, inner.lerp(blade, 0.5).toArray(), rotation, 'oar');
+        this.addShape('box', { size: bladeSize }, bladePosition, rotation, 'oar');
       }
     }
     b.build(this);
-    this.addShape('box', { size: [length * 0.85, hh, w * 0.9] }, [0, hh / 2, 0], null, 'hull');
-    this.addShape('box', { size: [length * 0.2, hh, w * 0.5] }, [length * 0.5, hh / 2, 0], null, 'bow');
-    this.addShape('box', { size: [length * 0.1, hh, w * 0.6] }, [-length * 0.5, hh / 2, 0], null, 'stern');
   }
 }
 /** Square sail bellying forward (+X), spanning `w` across Z and hanging `h` down from its yard at the origin. */
@@ -460,7 +468,7 @@ function sailGeometry(w: number, h: number, belly: number, foot = 1.1) {
   return out;
 }
 
-/** Ship: sailing ship with a curved plank hull, deck, stern castle, `masts` (1-3) with billowing sails, rigging, a crow's nest and a bowsprit. `length`, `sailColor`. Colliders: hull, cabin, one per mast. */
+/** Ship: sailing ship with a curved plank hull, deck, stern castle, `masts` (1-3) with billowing sails, rigging, a crow's nest and a bowsprit. `length`, `sailColor`. Colliders: hull, cabin, masts and bowsprit. */
 export class Ship extends WorldModel {
   constructor({ length = 10, masts = 2, sailColor = 0xf1ead6, ...o }: any = {}) {
     super('Ship', o);
@@ -531,8 +539,12 @@ export class Ship extends WorldModel {
     }
     // Bowsprit with a stay to the foremast.
     const bowTip = h.edge(1, 0);
-    b.add(tube(), mast, { position: [bowTip.x - length * 0.04, bowTip.y - hh * 0.1, 0], scale: [mw * 0.7, length * 0.22, mw * 0.7], quaternion: euler(0, 0, -Math.PI / 2 + 0.3) });
-    const sprit = new Vector3(bowTip.x - length * 0.04, bowTip.y - hh * 0.1, 0).add(new Vector3(length * 0.22, 0, 0).applyAxisAngle(new Vector3(0, 0, 1), 0.3));
+    const spritBase = new Vector3(bowTip.x - length * 0.04, bowTip.y - hh * 0.1, 0);
+    const spritRotation = euler(0, 0, -Math.PI / 2 + 0.3);
+    const spritLength = length * 0.22;
+    b.add(tube(), mast, { position: spritBase.toArray(), scale: [mw * 0.7, spritLength, mw * 0.7], quaternion: spritRotation });
+    const sprit = new Vector3(0, spritLength, 0).applyQuaternion(spritRotation).add(spritBase);
+    this.addShape('cylinder', { radius: mw * 0.7, height: spritLength }, spritBase.lerp(sprit, 0.5).toArray(), spritRotation, 'bowsprit');
     const foreX = n === 1 ? length * 0.05 : length * 0.22;
     const stay = new Vector3(foreX, deckY + mh * 0.9, 0).sub(sprit);
     b.add(tube(), rope, { position: sprit.toArray(), scale: [mw * 0.12, stay.length(), mw * 0.12], quaternion: towards(stay) });
