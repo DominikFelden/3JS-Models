@@ -507,7 +507,7 @@ export class Waterfall extends WorldModel {
  * rock, with small shards around it. Options: height (2), count (5, crystals
  * 1-12), color (0x7a5cff). Every crystal is its own mesh (`model.crystals`,
  * e.g. to pulse or pick them); the rock base is merged.
- * Collider: one cylinder around the cluster ('cluster').
+ * Colliders: individual convex shards and a low rock base.
  */
 export class Crystal extends WorldModel {
   declare crystals: any;
@@ -519,7 +519,16 @@ export class Crystal extends WorldModel {
     const mat = crystalMat(color);
     const g = crystalShard();
     this.crystals = [];
-    let reach = 0;
+    const vertices = g.attributes.position;
+    const unique = new Map<string, Vector3>();
+    for (let i = 0; i < vertices.count; i++) {
+      const vertex = new Vector3().fromBufferAttribute(vertices, i);
+      unique.set(vertex.toArray().join(','), vertex);
+    }
+    const addShard = (position: Vector3, scale: Vector3, rotation: Quaternion) => {
+      const points = [...unique.values()].map((vertex) => vertex.clone().multiply(scale).applyQuaternion(rotation).add(position).toArray());
+      this.addShape('convex', { points }, [0, 0, 0], null, 'shard');
+    };
     for (let i = 0; i < count; i++) {
       const main = i === 0;
       const a = this.rand(0, TAU), d = main ? 0 : this.rand(0.1, 0.35) * height, h = height * (main ? 1 : this.rand(0.35, 0.8));
@@ -527,15 +536,17 @@ export class Crystal extends WorldModel {
       const m = this.addMesh(g, mat, [Math.cos(a) * d * 0.8, -h * 0.06, Math.sin(a) * d * 0.8], [r, h, r]);
       m.quaternion.setFromEuler(new Euler(Math.sin(a) * lean, this.rand(0, TAU), -Math.cos(a) * lean, 'YXZ'));
       this.crystals.push(m);
-      reach = Math.max(reach, d + r);
+      addShard(m.position, m.scale, m.quaternion);
     }
     const b = new MergeBuilder();
     const rock = this.surface('rock');
     const base = Math.max(0.15, height * 0.22);
+    this.addShape('cylinder', { radius: base * 1.6, height: base * 1.4 }, [0, base * 0.1, 0], null, 'rock');
     b.add(rockBlob(this.seed % BLOB_VARIANTS, 1), rock, { position: [0, base * 0.1, 0], scale: [base * 1.6, base * 0.7, base * 1.4], yaw: this.rand(0, TAU), tint: 0.75, detail: 3 });
     for (let i = 0; i < 4; i++) {
       const a = this.rand(0, TAU), d = base * this.rand(1.2, 1.9), s = base * this.rand(0.25, 0.45);
       b.add(rockBlob(i + 1, 1), rock, { position: [Math.cos(a) * d, s * 0.1, Math.sin(a) * d], scale: [s, s * 0.7, s], yaw: this.rand(0, TAU), tint: 0.8, detail: 3 });
+      this.addShape('sphere', { radius: s }, [Math.cos(a) * d, s * 0.1, Math.sin(a) * d], null, 'rock');
     }
     const n = 3 + Math.floor(this.rand(0, 4));
     for (let i = 0; i < n; i++) {
@@ -545,9 +556,9 @@ export class Crystal extends WorldModel {
         position: [Math.cos(a) * d, -h * 0.1, Math.sin(a) * d], scale: [h * 0.2, h, h * 0.2], quaternion: q,
         tint: (x, y) => 0.55 + 0.75 * sat(y / h) ** 2,
       });
+      addShard(new Vector3(Math.cos(a) * d, -h * 0.1, Math.sin(a) * d), new Vector3(h * 0.2, h, h * 0.2), q);
     }
     b.build(this);
-    this.addShape('cylinder', { radius: Math.max(0.2, reach, base * 1.8), height }, [0, height / 2, 0], null, 'cluster');
   }
 }
 

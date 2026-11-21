@@ -1,4 +1,4 @@
-import { BoxGeometry, CylinderGeometry, ConeGeometry, SphereGeometry, Color, Group, Quaternion, Vector3 } from 'three';
+import { BoxGeometry, CylinderGeometry, ConeGeometry, SphereGeometry, Color, Quaternion, Vector3 } from 'three';
 import { WorldModel, MergeBuilder, shared, material } from '../WorldModel.ts';
 import { trianglesGeometry, gridTriangles, withBackFaces, rockBlob, BLOB_VARIANTS, hash3 } from './terrain.ts';
 
@@ -68,7 +68,7 @@ export class Well extends WorldModel {
  * Options: `sails` (2..8 blades, default 4), `height` (4..12, default 7).
  * The sails live in the sub-group `this.sails`; `setSailAngle(a)` sets its
  * rotation (radians) and `animate(dt, speed = 1)` advances it by dt seconds.
- * Colliders: 'tower' cone, 'cap' sphere-less box; sails are not colliders.
+ * Colliders: tower and cap, plus hub and sails that follow the axle rotation.
  */
 export class Windmill extends WorldModel {
   declare random: any;
@@ -99,7 +99,8 @@ export class Windmill extends WorldModel {
 
     // Sails: hub on the +Z side of the cap, blades radiate in the XY plane.
     const hubZ = rt * 1.2, hubY = h + rb * 0.2, len = h * 0.62;
-    this.sails = new Group();
+    const rotor = new WorldModel('Windmill rotor', { seed: this.seed });
+    this.sails = rotor;
     this.sails.position.set(0, hubY, hubZ);
     const sb = new MergeBuilder();
     const cloth = material(0xe6dcc0, true);
@@ -107,6 +108,8 @@ export class Windmill extends WorldModel {
       position: [0, 0, 0.1], scale: [0.25, 0.4, 0.25],
       quaternion: new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2),
     });
+    rotor.addShape('cylinder', { radius: 0.25, height: 0.4 }, [0, 0, 0.1],
+      new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2), 'hub');
     for (let i = 0; i < n; i++) {
       const q = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), (i / n) * Math.PI * 2);
       const at = (y, z = 0) => new Vector3(0, y, z).applyQuaternion(q).toArray();
@@ -114,6 +117,8 @@ export class Windmill extends WorldModel {
       sb.add(boxG(), wood, { position: at(len / 2), scale: [0.12, len, 0.1], quaternion: q });
       // Lattice frame: two rails and cross bars, with the canvas furled partly behind.
       const y0 = len * 0.22, y1 = len * 0.98, sw = 0.68;
+      rotor.addShape('box', { size: [0.12, len, 0.1] }, at(len / 2), q, 'sail-spar');
+      rotor.addShape('box', { size: [sw + 0.05, y1 - y0 + 0.04, 0.09] }, local(sw / 2, (y0 + y1) / 2, 0.02), q, 'sail');
       sb.add(boxG(), wood, { position: local(sw, (y0 + y1) / 2, 0.04), scale: [0.05, y1 - y0, 0.05], quaternion: q });
       const bars = 7;
       for (let k = 0; k <= bars; k++) {
@@ -178,11 +183,15 @@ export class Watchtower extends WorldModel {
     const cabin = 1.3;
     // Railing on the platform, posts at the corners and a rail per side.
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      b.add(boxG(), wood, { position: [sx * (pw / 2 - 0.05), h + cabin / 2, sz * (pw / 2 - 0.05)], scale: [0.1, cabin, 0.1] });
+      const position = [sx * (pw / 2 - 0.05), h + cabin / 2, sz * (pw / 2 - 0.05)], size = [0.1, cabin, 0.1];
+      b.add(boxG(), wood, { position, scale: size });
+      this.addShape('box', { size }, position, null, 'post');
     }
     for (const s of [-1, 1]) {
       b.add(boxG(), wood, { position: [0, h + 0.55, s * (pw / 2 - 0.05)], scale: [pw, 0.08, 0.06] });
       b.add(boxG(), wood, { position: [s * (pw / 2 - 0.05), h + 0.55, 0], scale: [0.06, 0.08, pw] });
+      this.addShape('box', { size: [pw, 0.08, 0.06] }, [0, h + 0.55, s * (pw / 2 - 0.05)], null, 'railing');
+      this.addShape('box', { size: [0.06, 0.08, pw] }, [s * (pw / 2 - 0.05), h + 0.55, 0], null, 'railing');
     }
     const rh = 1.2, ro = pw / 2 + 0.3, ry = h + cabin;
     b.add(pyramidG(), roof, { position: [0, ry + rh / 2, 0], scale: [ro / 0.7071, rh, ro / 0.7071] });

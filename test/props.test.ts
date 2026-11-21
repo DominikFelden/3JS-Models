@@ -22,7 +22,10 @@ for (const n of names) {
 
 test('Chest open differs from closed', () => {
   const c = new P.Chest({ seed: 1 }), o = new P.Chest({ seed: 1, open: true });
-  assert.notDeepStrictEqual(c.getColliders()[0].height ?? c.getColliders()[0].size, o.getColliders()[0].height ?? o.getColliders()[0].size);
+  const [closedBody, closedLid] = c.getColliders(), [openBody, openLid] = o.getColliders();
+  assert.deepEqual(closedBody, openBody);
+  assert.equal(openLid.type, 'convex');
+  assert.ok(Math.max(...openLid.points.map((point) => point[1])) > Math.max(...closedLid.points.map((point) => point[1])));
 });
 
 test('lit option toggles flame', () => {

@@ -32,6 +32,12 @@ test('Windmill sails rotate via setSailAngle / animate', () => {
   const m = new Windmill({ seed: 3, sails: 6 });
   assert.strictEqual(m.sailCount, 6);
   assert.ok(m.sails.children.length > 0 && m.sails.parent === m);
+  const i = m.getColliderTags().indexOf('sail-spar');
+  const first = m.getColliders()[i];
+  m.setSailAngle(Math.PI / 2);
+  const rotated = m.getColliders()[i];
+  assert.ok(Math.abs(rotated.position[1] - m.sails.position.y) < 1e-6);
+  assert.ok(Math.abs(rotated.position[0] + first.position[1] - m.sails.position.y) < 1e-6);
   m.setSailAngle(1);
   assert.strictEqual(m.sails.rotation.z, 1);
   m.animate(0.5, 2);

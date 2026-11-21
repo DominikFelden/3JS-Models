@@ -181,15 +181,33 @@ test('Castle and houses have windows facing outwards', () => {
   assert.ok(front && turned);
 });
 
-test('Houses: each type has body + roof colliders; unknown type falls back', () => {
+test('Houses expose a roof and protruding chimney shaft and cap for every type', () => {
   for (const type of HOUSE_TYPES) {
-    const h = new House({ type, size: 2 });
-    assert.deepStrictEqual(h.getColliderTags(), ['body', 'roof']);
+    const h = new House({ type, seed: 20, size: 2, rotation: Math.PI / 2 });
+    const tags = h.getColliderTags(), colliders = h.getColliders();
+    assert.deepStrictEqual(tags.slice(0, 2), ['body', 'roof']);
     assert.strictEqual(h.type, type);
-    assert.ok(h.getColliders()[1].points.length >= 5);
+    const [, roof] = colliders;
+    const [shaft, cap] = colliders.filter((_, i) => tags[i] === 'chimney');
+    assert.ok(roof.points.length >= 5);
+    assert.ok(near(shaft.size[0], 0.9) && near(cap.size[0], 1.2));
+    assert.ok(near(shaft.position[0], cap.position[0]) && near(shaft.position[2], cap.position[2]));
+    assert.ok(cap.position[1] - cap.size[1] / 2 > Math.max(...roof.points.map((point) => point[1])));
   }
   assert.strictEqual(new House({ type: 'nope' }).type, 'cottage');
   assert.notStrictEqual(sig(new House()), sig(new House()));
+});
+
+test('House balconies expose floors and rails outside the wall', () => {
+  const h = new House({ type: 'towerhouse', seed: 20 });
+  const tags = h.getColliderTags(), colliders = h.getColliders();
+  const floors = colliders.filter((_, i) => tags[i] === 'balcony-floor');
+  assert.ok(floors.length > 0);
+  assert.equal(tags.filter((tag) => tag === 'railing').length, floors.length * 3);
+  for (const floor of floors) {
+    const [x, , z] = floor.position, [w, , d] = colliders[0].size;
+    assert.ok(Math.abs(x) > w / 2 || Math.abs(z) > d / 2);
+  }
 });
 
 test('dispose frees owned (merged) geometries only', () => {

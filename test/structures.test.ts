@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { Quaternion, Vector3 } from 'three';
 import {
   WizardTower, Temple, Obelisk, Portal, Ruins, Gravestone, Shrine, Pyramid,
 } from '../src/models/Structures.ts';
@@ -45,10 +46,31 @@ test('Temple columns option, Gravestone style, Obelisk height', () => {
   const t = (c) => new Temple({ seed: 1, columns: c }).getColliderTags().filter((x) => x === 'column').length;
   assert.ok(t(8) > t(4));
   assert.strictEqual(new Gravestone({ seed: 1, style: 'cross' }).style, 'cross');
-  const o = new Obelisk({ height: 10 }).getColliders().find((_, i, a) => i === 1);
-  assert.ok(Math.abs(o.height === undefined ? o.size[1] - 9.3 : 0) < 1e-6);
+  const o = new Obelisk({ height: 10 });
+  const shaft = o.getColliders()[o.getColliderTags().indexOf('shaft')];
+  assert.equal(Math.max(...shaft.points.map((point) => point[1])), 10);
 });
 
+test('Temple colliders leave air above the eaves and preserve three walkable treads', () => {
+  const temple = new Temple({ seed: 1, width: 8, depth: 10 });
+  const tags = temple.getColliderTags(), shapes = temple.getColliders();
+  const get = (tag) => shapes.filter((_, i) => tags[i] === tag);
+  const base = get('base');
+  assert.equal(base.length, 3);
+  const treadTops = [4.5, 4.3, 4.1].map((x) => Math.max(...base
+    .filter((shape) => shape.size[0] / 2 > x)
+    .map((shape) => shape.position[1] + shape.size[1] / 2)));
+  assert.deepEqual(treadTops.map((height) => Math.round(height * 10)), [2, 4, 6]);
+  const roof = get('roof');
+  const gable = roof.find((shape) => shape.type === 'convex');
+  const peak = Math.max(...gable.points.map((point) => point[1]));
+  assert.ok(gable.points.filter((point) => Math.abs(point[0]) > 4).every((point) => point[1] < peak - 1));
+  const slopes = roof.filter((shape) => shape.type === 'box');
+  const vertical = slopes.map((shape) => new Vector3(1, 0, 0).applyQuaternion(new Quaternion(...shape.quaternion)).y);
+  assert.equal(slopes.length, 2);
+  assert.ok(vertical[0] > 0.2 && vertical[1] < -0.2);
+  assert.ok(slopes.every((shape) => shape.size[2] > 10));
+});
 test('Portal has translucent disc and size scales colliders', () => {
   const p = new Portal({ seed: 1, size: 2 });
   assert.ok(p.children.some((c) => c.material?.transparent));

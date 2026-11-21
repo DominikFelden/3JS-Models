@@ -136,8 +136,9 @@ export class Castle extends WorldModel {
     return [t * this.rand(0.97, 1.03), t, t * this.rand(0.95, 1.02)];
   }
 
-  _stoneBox(position, scale, quaternion = null, grime = true) {
+  _stoneBox(position, scale, quaternion = null, grime = true, tag = null) {
     this._b.add(boxG(), this._stone, { position, scale, quaternion, tint: this._tint(), grime });
+    if (tag) this.addShape('box', { size: scale }, position, quaternion, tag);
   }
 
   _stoneCyl(position, scale, grime = true) {
@@ -149,11 +150,11 @@ export class Castle extends WorldModel {
     const gap = 0.7, nx = Math.floor(w / gap), nz = Math.floor(d / gap);
     for (let i = 0; i < nx; i++) {
       const u = (i + 0.5) / nx * w - w / 2;
-      for (const s of [-1, 1]) this._stoneBox([cx + u, h + 0.15, cz + s * (d / 2 - 0.08)], [0.35, 0.3, 0.16], null, false);
+      for (const s of [-1, 1]) this._stoneBox([cx + u, h + 0.15, cz + s * (d / 2 - 0.08)], [0.35, 0.3, 0.16], null, false, 'merlon');
     }
     for (let i = 0; i < nz; i++) {
       const u = (i + 0.5) / nz * d - d / 2;
-      for (const s of [-1, 1]) this._stoneBox([cx + s * (w / 2 - 0.08), h + 0.15, cz + u], [0.16, 0.3, 0.35], null, false);
+      for (const s of [-1, 1]) this._stoneBox([cx + s * (w / 2 - 0.08), h + 0.15, cz + u], [0.16, 0.3, 0.35], null, false, 'merlon');
     }
   }
 
@@ -161,6 +162,7 @@ export class Castle extends WorldModel {
   _flag(x, y, z) {
     const b = this._b, yaw = this.rand(0, Math.PI * 2);
     b.add(cylG(), material(0x4a3322, true), { position: [x, y + 0.7, z], scale: [0.035, 1.4, 0.035] });
+    this.addShape('cylinder', { radius: 0.035, height: 1.4 }, [x, y + 0.7, z], null, 'flagpole');
     b.add(boxG(), this._banner, { position: [x + Math.cos(yaw) * 0.34, y + 1.15, z - Math.sin(yaw) * 0.34], scale: [0.65, 0.4, 0.03], yaw });
   }
 
@@ -168,7 +170,7 @@ export class Castle extends WorldModel {
   _keep(w, d, h, c) {
     const b = this._b;
     this._stoneBox([0, h / 2, 0], [w, h, d]);
-    this._stoneBox([0, 0.25, 0], [w + 0.25, 0.5, d + 0.25]);          // plinth
+    this._stoneBox([0, 0.25, 0], [w + 0.25, 0.5, d + 0.25], null, true, 'plinth');
     this._stoneBox([0, h * 0.5, 0], [w + 0.1, 0.12, d + 0.1], null, false); // string course
     this.addShape('box', { size: [w, h, d] }, [0, h / 2, 0], null, 'keep');
     if (c === 0) {
@@ -187,6 +189,7 @@ export class Castle extends WorldModel {
       this._stoneCyl([tx, th / 2, -d / 2 - tr * 0.4], [tr, th, tr]);
       this.addShape('cylinder', { radius: tr, height: th }, [tx, th / 2, -d / 2 - tr * 0.4], null, 'turret');
       b.add(coneG(), this._roof, { position: [tx, th + tr * 0.8, -d / 2 - tr * 0.4], scale: [tr * 1.25, tr * 1.6, tr * 1.25], tint: this._tint(), uv: 'cone' });
+      this.addShape('cone', { radius: tr * 1.25, height: tr * 1.6 }, [tx, th + tr * 0.8, -d / 2 - tr * 0.4], null, 'roof');
     }
     // Door on +Z, slightly off-centre.
     this._doorX = this.rand(-0.4, 0.4);
@@ -237,13 +240,12 @@ export class Castle extends WorldModel {
     if (crenel) {
       // Corbelled parapet with merlons instead of a roof.
       this._stoneCyl([x, y0 + h - 0.12, z], [r * 1.12, 0.24, r * 1.12], false);
+      this.addShape('cylinder', { radius: r * 1.12, height: 0.24 }, [x, y0 + h - 0.12, z], null, 'parapet');
       const n = Math.max(6, Math.round(r * 9));
       for (let i = 0; i < n; i++) {
         const a = (i + 0.5) / n * Math.PI * 2;
-        this._b.add(boxG(), this._stone, {
-          position: [x + Math.sin(a) * r * 1.02, y0 + h + 0.15, z + Math.cos(a) * r * 1.02],
-          scale: [r * 2.4 / n, 0.3, 0.16], yaw: a, tint: this._tint(),
-        });
+        this._stoneBox([x + Math.sin(a) * r * 1.02, y0 + h + 0.15, z + Math.cos(a) * r * 1.02],
+          [r * 2.4 / n, 0.3, 0.16], new Quaternion().setFromAxisAngle(Y, a), false, 'merlon');
       }
     } else {
       const roofH = r * this.rand(1.3, 2.6);
@@ -286,7 +288,7 @@ export class Castle extends WorldModel {
     for (let i = 0; i < n; i++) {
       if (this.random() < 0.06) continue;
       const u = (i + 0.5) / n * len - len / 2;
-      this._stoneBox([mx + ux * u, height + 0.15, mz + uz * u], [0.4, 0.3, thick * 0.8], q, false);
+      this._stoneBox([mx + ux * u, height + 0.15, mz + uz * u], [0.4, 0.3, thick * 0.8], q, false, 'merlon');
     }
   }
 
@@ -343,7 +345,7 @@ export class Castle extends WorldModel {
       this._tower(gateR.x, gateR.z, grR, p.cornerH * this.rand(1, 1.3));
       // Gate lintel between the flank towers, high above the passage.
       const lw = gate + 0.4;
-      this._stoneBox([0, 3.2, H], [lw, 0.9, 0.8]);
+      this._stoneBox([0, 3.2, H], [lw, 0.9, 0.8], null, true, 'lintel');
       this._boxMerlons(lw, 0.8, 3.65, 0, H);
     }
     const half = Math.ceil(p.mid / 2);
@@ -370,7 +372,7 @@ export class Castle extends WorldModel {
     this.addShape('box', { size: [w, h, d] }, [x, h / 2, z], null, 'hall');
     const roofH = h * 0.6;
     b.add(gableG(), this._roof, { position: [x, h, z], scale: [ow / 2, roofH, od], tint: this._tint() });
-    this._stoneBox([x + this.rand(-w, w) * 0.25, h + roofH * 0.8, z + this.rand(-d, d) * 0.25], [0.35, roofH * 0.8, 0.35], null, false); // chimney
+    this._stoneBox([x + this.rand(-w, w) * 0.25, h + roofH * 0.8, z + this.rand(-d, d) * 0.25], [0.35, roofH * 0.8, 0.35], null, false, 'chimney');
     this.addShape('convex', { points: [
       [x - ow / 2, h, z - od / 2], [x + ow / 2, h, z - od / 2], [x + ow / 2, h, z + od / 2], [x - ow / 2, h, z + od / 2],
       [x, h + roofH, z - od / 2], [x, h + roofH, z + od / 2],
