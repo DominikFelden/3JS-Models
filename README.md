@@ -223,6 +223,8 @@ scene.add(new Castle({ size: 2 }));
 Since models are normal `Group`s you can still move them later with `model.position`, `model.rotation`, `model.scale.setScalar()`.
 
 ## Geometric information (for physics / collision in other projects)
+In the viewer, **Show colliders** replaces the rendered model and ground with just the model's collision shapes. For Forest entries, this shows the single area box exposed by `getColliders()`, not individual tree colliders.
+
 No physics is implemented here. Instead each model exposes analytic shapes in **world space**:
 ```js
 const castle = new Castle({ position: [20, 0, 0], rotation: 0.5, size: 2 });
