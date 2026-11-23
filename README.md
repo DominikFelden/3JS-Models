@@ -62,7 +62,15 @@ In the viewer, enable **Preview impostor** and zoom out past **Distance** (25 wo
 
 With `plants` (a count), `Forest` scatters seeded `Fern`, `Bracken`, `TallGrass`, `Hosta` and `Bush` variants between the trunks without moving any trees. Plants keep their full geometry up to `plantLodDistance` (25 m by default), then dither into lit, camera-facing impostors baked from side and overhead views of the same variants. Only in-range, in-view impostors are submitted, at two triangles per plant in one shared draw call. Plants fade out at `plantDistance` (60 m; ferns at 85%, grass and hostas at 70%). Auto Detail can shorten the outer range without affecting the fully detailed band.
 
-`meadow: true` (off by default; the viewer's *Meadow grass* parameter) gives the whole forest floor the illusion of grass without a mesh per blade, in three tiers (`src/forest/meadow.ts`, also exported as `Meadow`): a painted **ground shader** everywhere (lush and dry patches, dappled tones, blade strokes that fade with distance; one draw call), **near clumps** (instanced crossed cards of 6 triangles whose blades are cut out procedurally in the fragment shader, each with its own size, turn and tint) up to 18 m, and **far clumps** (a quarter of them, drawn 1.8x larger) dithered out at 50 m, where the ground shader carries on alone. Clumps are derived per chunk from the seed and generated only near the camera, so the same seed always grows the same meadow and memory does not grow with the area. Tune it with `meadowOptions` (`density`, `distance`, `nearDistance`, `farShare`, `color`, `dryColor`, ...). `stats.clumps` counts the drawn clumps; the meadow has its own random stream and never changes the trees.
+`meadow: true` (off by default) adds grass to the forest floor. Choose a mode with `meadowOptions.type`:
+
+| Grass type | Cost and appearance |
+|---|---|
+| `'ground'` | Tiled grass texture in one ground draw call; no clump geometry or CPU placement work. |
+| `'simple'` | The same ground plus one instanced batch of sparse four-triangle tufts within roughly 24 m. Tufts have no procedural blade cutouts or shadow-map sampling. |
+| `'detailed'` (API default) | The original painted ground shader, six-triangle crossed cards with procedural blade cutouts up close, and larger, sparser clumps fading out around 50 m. |
+
+`meadowOptions.length` is a height multiplier (0.25–3, default 1) for the 3D grass in Simple and Detailed; it does not change placement or width. Clumps are seeded per chunk and independent of tree placement. Other options include `density`, `distance`, `color` and (in Detailed) `nearDistance` and `farShare`. The viewer's **Grass type** control includes **Off** as a baseline and defaults to **Simple tufts**. Use **Grass length (3D)** to adjust tuft height. To compare frame rates from the same view, turn off **Auto detail** so tree and plant ranges don't adapt between runs. `stats.clumps` counts submitted clumps.
 
 `plantLodDistance: Infinity` disables plant LOD. `plantImpostors` defaults to the forest's `impostors` setting. If disabled or WebGL baking is unavailable, distant bushes use the `lowPoly` mesh and the other plants stay 3D. `plantShadows` (off by default) enables simple shadows from nearby 3D plants, not impostors. `stats.plants` counts each selected plant once, even during the cross-fade.
 

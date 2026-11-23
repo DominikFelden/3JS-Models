@@ -131,9 +131,9 @@ const byNear = (a, b) => a.near - b.near;
  *    not the fully detailed band. `plantImpostors` defaults to `impostors`; if off or unavailable, bushes use low-poly
  *    meshes far away while other plants stay 3D. Options: plantVariants (default 3 per kind), plantShadows (default false),
  *    plantOptions (passed to every plant).
- *  - meadow: grass illusion over the whole forest floor (default false), see `Meadow`: a painted ground shader everywhere,
- *    tiny instanced grass clumps near the camera and larger, sparser ones farther out. `meadowOptions` is passed to it
- *    (density, distance, nearDistance, color, ...). It has its own random stream, so a seed grows the same trees with or without it.
+ *  - meadow: grass illusion over the whole forest floor (default false). `meadowOptions.type` selects
+ *    'ground' (texture only), 'simple' (with sparse tufts), or 'detailed' (default; crossed cards and a painted ground shader).
+ *    `meadowOptions.length` scales blade height in the 3D modes. The meadow's random stream does not affect the trees.
  *  - renderer: your WebGLRenderer, used to bake the impostors (otherwise a temporary one is used)
  *
  * Without WebGL (Node) nothing is baked: impostors have no pictures, the rest
