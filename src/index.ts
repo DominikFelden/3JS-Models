@@ -10,7 +10,7 @@ export { Castle, MAX_CASTLE_COMPLEXITY } from './models/Castle.ts';
 export { LeafTree } from './models/LeafTree.ts';
 export { StylizedTree, MAX_STYLIZED_COMPLEXITY, STYLIZED_COVER, CARD_SIZE } from './models/StylizedTree.ts';
 export { Undergrowth, UNDERGROWTH_TYPES } from './forest/undergrowth.ts';
-export { Meadow } from './forest/meadow.ts';
+export { Meadow, type MeadowOptions, type MeadowType } from './forest/meadow.ts';
 export { Forest, FOREST_LEVELS, STYLIZED_FOREST_LEVELS, FOREST_TREE_TYPES, stylizedForestLevels } from './Forest.ts';
 export { bakeModelImpostor, type ModelImpostor, type ModelImpostorOptions } from './impostors.ts';
 export {

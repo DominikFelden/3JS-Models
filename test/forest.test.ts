@@ -7,7 +7,9 @@ import { InstanceBuffer } from '../src/forest/instances.ts';
 import { Undergrowth } from '../src/forest/undergrowth.ts';
 import { Bush } from '../src/models/Bush.ts';
 import { TallGrass, Bracken } from '../src/models/Plants.ts';
-import { bakeModelImpostor } from '../src/index.ts';
+import { bakeModelImpostor, Forest } from '../src/index.ts';
+import { Meadow } from '../src/forest/meadow.ts';
+import { models } from '../src/registry.ts';
 
 test('model impostors fall back without WebGL and reject invalid bake sizes', () => {
   const model = new Bush({ seed: 5 });
@@ -201,8 +203,6 @@ test('impostor atlas layout fits all frames', () => {
 });
 
 test('meadow: same seed grows the same clumps whatever the camera path, near level is dense and far level sparse', async () => {
-  const { Meadow } = await import('../src/forest/meadow.ts');
-  const { Forest } = await import('../src/Forest.ts');
   const { Frustum, Matrix4, PerspectiveCamera } = await import('three');
   const view = (x: number, z: number) => {
     const cam = new PerspectiveCamera(60, 1, 0.1, 500);
@@ -236,4 +236,47 @@ test('meadow: same seed grows the same clumps whatever the camera path, near lev
   withMeadow.update(cam);
   assert.ok(withMeadow.stats.clumps > 0);
   [first, second, other, withMeadow, without].forEach((m) => m.dispose());
+});
+
+test('grass types reduce submitted work; length scales only blade height', () => {
+  const ground = new Meadow({ type: 'ground' });
+  const simple = new Meadow({ type: 'simple', seed: 3 });
+  const tall = new Meadow({ type: 'simple', seed: 3, length: 3 });
+  const detailed = new Meadow({ type: 'detailed', seed: 3 });
+  const camera = new Vector3(0, 3, 0);
+  const frustum = { intersectsBox: () => true, intersectsSphere: () => true };
+  for (const meadow of [ground, simple, tall, detailed]) meadow.update(camera, 1, frustum);
+  assert.equal(ground.children.length, 1);
+  assert.equal(ground.stats.clumps, 0);
+  assert.equal(ground._chunks.size, 0);
+  assert.equal(simple.stats.drawCalls, 1);
+  assert.ok(simple.stats.triangles > 0 && simple.stats.triangles < detailed.stats.triangles / 2);
+  assert.deepStrictEqual(simple._chunk(10, 10).data, tall._chunk(10, 10).data);
+  const shortPos = simple._variants[0].geometry.attributes.position;
+  const tallPos = tall._variants[0].geometry.attributes.position;
+  for (let i = 0; i < shortPos.count; i++) {
+    assert.equal(tallPos.getX(i), shortPos.getX(i));
+    assert.equal(tallPos.getZ(i), shortPos.getZ(i));
+    assert.ok(Math.abs(tallPos.getY(i) - shortPos.getY(i) * 3) < 1e-6);
+  }
+  camera.y = 35;
+  simple.update(camera, 1, frustum);
+  detailed.update(camera, 1, frustum);
+  assert.equal(simple.stats.clumps, 0, 'old batches are cleared above the simple grass range');
+  assert.ok(detailed.stats.clumps > 0);
+  for (const meadow of [ground, simple, tall, detailed]) meadow.dispose();
+});
+
+test('fly-over grass parameters select the grass mode and pass through length', () => {
+  const entry = models.find(({ name }) => name === 'Forest (fly-over)');
+  const defaults = Object.fromEntries(entry.params.map(({ key, value }) => [key, value]));
+  const options = { ...defaults, count: 0, plants: 0, variants: 1, impostors: 'off', area: 40, seed: 2, meadowLength: 2 };
+  const forest = entry.create(options);
+  const off = entry.create({ ...options, meadowType: 'off' });
+  assert.ok(forest instanceof Forest && off instanceof Forest);
+  assert.equal(forest.meadow.grassType, 'simple');
+  assert.equal(forest.meadow.grassLength, 2);
+  assert.equal(off.meadow, null);
+  forest.dispose();
+  off.dispose();
 });

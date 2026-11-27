@@ -49,7 +49,10 @@ const FOREST_PARAMS = (count, area, plants) => [
   ON_OFF('lod', 'Distance LOD'),
   ON_OFF('impostors', 'Impostors'),
   ON_OFF('canopy', 'Canopy'),
-  ON_OFF('meadow', 'Meadow grass'),
+  { key: 'meadowType', label: 'Grass type', type: 'select', value: 'simple', options: [
+    ['off', 'Off'], ['ground', 'Ground only'], ['simple', 'Simple tufts'], ['detailed', 'Detailed meadow'],
+  ] },
+  { key: 'meadowLength', label: 'Grass length (3D)', type: 'range', min: 0.25, max: 3, step: 0.05, value: 1 },
   ON_OFF('shadows', 'Shadows'),
   ON_OFF('autoDetail', 'Auto detail'),
 ];
@@ -57,10 +60,13 @@ const FOREST_PARAMS = (count, area, plants) => [
 const FOREST_COMPLEXITY = { max: MAX_STYLIZED_COMPLEXITY, value: STYLIZED_FOREST_LEVELS[0].complexity };
 /** Forest from the viewer's options; `autoDetail` lets the viewer lower `detail` when the frame rate drops. */
 function forest(o) {
+  const meadowType = o.meadowType ?? 'simple';
   const f = new Forest({
     seed: o.seed, count: o.count, area: o.area, treeType: o.treeType, sizeVariety: o.sizeVariety,
     complexity: o.treeType === 'leaf' ? null : o.complexity, // the slider covers the stylized trees; leaf trees keep their levels
-    lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off', meadow: o.meadow !== 'off',
+    lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
+    meadow: meadowType !== 'off',
+    meadowOptions: { type: meadowType === 'off' ? undefined : meadowType, length: o.meadowLength },
     impostorDistance: o.treeDistance, canopyDistance: o.impostorDistance,
     plants: o.plants, plantDistance: o.plantDistance, shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
   });
