@@ -199,3 +199,41 @@ test('impostor atlas layout fits all frames', () => {
   assert.ok(plants.cols * plants.rows >= 15 * views.yaws * views.elevations);
   assert.ok(plants.cols * plants.rows < 15 * 32, 'plants use fewer views than the tree atlas');
 });
+
+test('meadow: same seed grows the same clumps whatever the camera path, near level is dense and far level sparse', async () => {
+  const { Meadow } = await import('../src/forest/meadow.ts');
+  const { Forest } = await import('../src/Forest.ts');
+  const { Frustum, Matrix4, PerspectiveCamera } = await import('three');
+  const view = (x: number, z: number) => {
+    const cam = new PerspectiveCamera(60, 1, 0.1, 500);
+    cam.position.set(x, 20, z);
+    cam.lookAt(x, 0, z + 1);
+    cam.updateMatrixWorld();
+    return { position: cam.position, frustum: new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse)) };
+  };
+  const first = new Meadow({ area: 200, seed: 7 }), second = new Meadow({ area: 200, seed: 7 }), other = new Meadow({ area: 200, seed: 8 });
+  const a = view(0, 0), b = view(60, 60);
+  first.update(a.position, 1, a.frustum);
+  first.update(b.position, 1, b.frustum); // wanders off, then back
+  first.update(a.position, 1, a.frustum);
+  second.update(a.position, 1, a.frustum);
+  other.update(a.position, 1, a.frustum);
+  assert.ok(first.stats.clumps > 0 && first.stats.drawCalls > 0);
+  assert.deepStrictEqual(first.stats, second.stats);
+  assert.deepStrictEqual([...first._chunk(12, 12).data], [...second._chunk(12, 12).data]);
+  assert.notDeepEqual([...first._chunk(12, 12).data], [...other._chunk(12, 12).data]);
+  const nearData = first._chunk(12, 12);
+  const far = Array.from({ length: nearData.count }, (_, i) => nearData.data[i * 7 + 6]);
+  assert.ok(far.some((f) => f === 1) && far.some((f) => f === 0), 'some clumps are also drawn at far range');
+  first.update(a.position, 1, a.frustum, 0.2);
+  assert.ok(first.stats.clumps <= second.stats.clumps, 'detail shortens the range');
+
+  const withMeadow = new Forest({ count: 50, area: 100, seed: 3, meadow: true }), without = new Forest({ count: 50, area: 100, seed: 3 });
+  assert.ok(withMeadow.meadow && !without.meadow, 'off by default');
+  assert.deepStrictEqual(withMeadow.getPlacements(), without.getPlacements(), 'the meadow never changes the trees');
+  const cam = new PerspectiveCamera(60, 1, 0.1, 500);
+  cam.position.set(0, 10, 0); cam.lookAt(0, 0, 1);
+  withMeadow.update(cam);
+  assert.ok(withMeadow.stats.clumps > 0);
+  [first, second, other, withMeadow, without].forEach((m) => m.dispose());
+});

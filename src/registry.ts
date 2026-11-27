@@ -49,6 +49,7 @@ const FOREST_PARAMS = (count, area, plants) => [
   ON_OFF('lod', 'Distance LOD'),
   ON_OFF('impostors', 'Impostors'),
   ON_OFF('canopy', 'Canopy'),
+  ON_OFF('meadow', 'Meadow grass'),
   ON_OFF('shadows', 'Shadows'),
   ON_OFF('autoDetail', 'Auto detail'),
 ];
@@ -59,7 +60,7 @@ function forest(o) {
   const f = new Forest({
     seed: o.seed, count: o.count, area: o.area, treeType: o.treeType, sizeVariety: o.sizeVariety,
     complexity: o.treeType === 'leaf' ? null : o.complexity, // the slider covers the stylized trees; leaf trees keep their levels
-    lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off',
+    lod: o.lod !== 'off', impostors: o.impostors !== 'off', canopy: o.canopy !== 'off', meadow: o.meadow !== 'off',
     impostorDistance: o.treeDistance, canopyDistance: o.impostorDistance,
     plants: o.plants, plantDistance: o.plantDistance, shadows: o.shadows !== 'off', textures: o.textures, treeOptions: { textures: o.textures }, renderer: o.renderer,
   });
